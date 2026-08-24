@@ -10,3 +10,5 @@ dependencies = [
     "matplotlib>=3.11.1",
     "optax>=0.2",
 ]
+[tool.ruff.lint.per-file-ignores]
+"experiments/**" = ["E402"]

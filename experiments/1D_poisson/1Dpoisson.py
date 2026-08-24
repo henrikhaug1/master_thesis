@@ -25,7 +25,7 @@ def f(x):
 
 
 def residual(model, x):
-    u, u_x, u_xx = derivatives(model, t=x, order=2)
+    u, u_x, u_xx = derivatives(model, x, order=2)
     return -u_xx - f(x)
 
 
@@ -50,7 +50,7 @@ def main():
     KANN_model = KANN(layer_sizes=[1, 16, 16, 16, 1], rngs=nnx.Rngs(0))
     KANN_history = train(
         model=KANN_model,
-        loss=lambda model: loss_fn(model, x, residual=residual, ic_fn=bc_fn),
+        loss=lambda model: loss_fn(model, x, residual=residual, bc_fn=bc_fn),
         steps=5000,
         lr=0.001,
     )

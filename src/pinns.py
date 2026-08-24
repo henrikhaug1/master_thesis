@@ -1,6 +1,6 @@
 import flax.nnx as nnx
-import jax, jax.numpy as jnp
-import optax
+import jax
+import jax.numpy as jnp
 
 
 class MLP(nnx.Module):

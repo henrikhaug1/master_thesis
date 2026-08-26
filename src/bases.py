@@ -38,3 +38,17 @@ class BSplineBasis:
             )
             bases = left + right
         return bases
+
+
+class ChebyshevBasis:
+    def __init__(self, degree=5, domain=None):
+        self.domain = domain
+        self.n_basis = degree + 1
+
+    def __call__(self, x):
+        z = _to_reference(x, domain=self.domain)[..., None]
+        polynomials = [jnp.ones_like(z), z]
+
+        for n in range(2, self.n_basis):
+            polynomials.append(2 * z * polynomials[n - 1] - polynomials[n - 2])
+        return jnp.concatenate(polynomials[: self.n_basis], axis=-1)

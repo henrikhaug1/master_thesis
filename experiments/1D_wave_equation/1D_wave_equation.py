@@ -5,20 +5,24 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import jax
 import jax.numpy as jnp
+import numpy as np
 import flax.nnx as nnx
 
 from src.pinns import MLP, KANN
 from src.loss import loss_fn
 from src.utils import partials
-from src.train import train
-from src.plotting import plot_solutions, plot_losses, plot_field
+from src.plotting import plot_solutions, plot_field
+from src.sweep import compare_models
+from src.bases import BSplineBasis
 
 
 c = 1.0
 L = 2 * jnp.pi
 k = jnp.pi / L
+T = 2 * L / c  # one full period of cos(c k t)
+
+OUT_DIR = Path(__file__).parent
 
 
 def exact_solution(x, t):
@@ -44,98 +48,89 @@ def ic_fn(model, x):
     return jnp.mean((u - jnp.sin(k * x)) ** 2) + jnp.mean(u_t**2)
 
 
-T = 2 * L / c  # one full period of cos(c k t)
+def main():
+    xg = jnp.linspace(0, L, 60)
+    tg = jnp.linspace(0, T, 60)
+    X, T_grid = jnp.meshgrid(xg, tg, indexing="ij")
+    collocation = (X.ravel(), T_grid.ravel())
 
-# Interior collocation: a grid of (x, t) pairs, flattened to matching 1-D arrays.
-xg = jnp.linspace(0, L, 60)
-tg = jnp.linspace(0, T, 60)
-X, T_grid = jnp.meshgrid(xg, tg, indexing="ij")
-collocation = (X.ravel(), T_grid.ravel())
+    x_ic = jnp.linspace(0, L, 100)  # bottom edge t = 0
+    t_bc = jnp.linspace(0, T, 100)  # side edges x = 0, L
 
-x_ic = jnp.linspace(0, L, 100)  # bottom edge t = 0
-t_bc = jnp.linspace(0, T, 100)  # side edges x = 0, L
+    XT = jnp.stack([X.ravel(), T_grid.ravel()], axis=-1)
+    U_exact = exact_solution(X, T_grid)
 
-# ---------- MLP ----------
-MLP_model = MLP([2, 32, 32, 32, 1], act_fun=nnx.silu, rngs=nnx.Rngs(0))
-MLP_loss_history = train(
-    MLP_model,
-    loss=lambda model: loss_fn(
-        model,
-        collocation,
-        residual=residual,
-        ic_fn=lambda m: ic_fn(m, x_ic),
-        bc_fn=lambda m: bc_fn(m, t_bc),
-    ),
-    steps=10000,
-    lr=0.001,
-)
-
-# ---------- KANN ----------
-KANN_model = KANN([2, 32, 32, 32, 1], rngs=nnx.Rngs(0))
-KANN_loss_history = train(
-    KANN_model,
-    loss=lambda model: loss_fn(
-        model,
-        collocation,
-        residual=residual,
-        ic_fn=lambda m: ic_fn(m, x_ic),
-        bc_fn=lambda m: bc_fn(m, t_bc),
-    ),
-    steps=10000,
-    lr=0.001,
-)
-
-# Evaluate both models on the (x, t) grid.
-XT = jnp.stack([X.ravel(), T_grid.ravel()], axis=-1)
-U_MLP = MLP_model(XT)[:, 0].reshape(X.shape)
-U_KANN = KANN_model(XT)[:, 0].reshape(X.shape)
-U_exact = exact_solution(X, T_grid)
-
-
-# ---------- Plotting ----------
-FIGS = Path(__file__).parent / "figs"
-FIGS.mkdir(exist_ok=True)
-
-loss_dict = {"MLP_loss": MLP_loss_history, "KANN_loss": KANN_loss_history}
-plot_losses(
-    loss_dict,
-    str(FIGS / "1D_wave_MLP_vs_KANN_loss.pdf"),
-    "1D Wave Equation - MLP VS. KANN",
-)
-
-# Snapshots u(x, .) at a few fixed times.
-for j in [0, len(tg) // 4, len(tg) // 2]:
-    plot_solutions(
-        xg,
-        {"exact": U_exact[:, j], "MLP": U_MLP[:, j], "KANN": U_KANN[:, j]},
-        "x",
-        "u(x,t)",
-        f"1D Wave at t = {float(tg[j]):.2f}",
-        str(FIGS / f"1D_wave_snapshot_t{j}.pdf"),
+    results = compare_models(
+        models={
+            "MLP": lambda rngs: MLP([2, 96, 96, 96, 1], act_fun=nnx.silu, rngs=rngs),
+            "KANN": lambda rngs: KANN(
+                [2, 32, 32, 32, 1],
+                basis_fn=lambda: BSplineBasis(grid_range=(-0.5, 13.0)),
+                rngs=rngs,
+            ),
+        },
+        loss=lambda model: loss_fn(
+            model,
+            collocation,
+            residual=residual,
+            ic_fn=lambda m: ic_fn(m, x_ic),
+            bc_fn=lambda m: bc_fn(m, t_bc),
+        ),
+        predict_fn=lambda model: model(XT)[:, 0],
+        u_exact=U_exact.ravel(),
+        x=None,
+        seeds=(0, 1, 2),
+        out_dir=OUT_DIR,
+        title="1D Wave Equation",
+        steps=5000,
+        lr=1e-3,
     )
 
-# Full space-time fields and their error against the exact solution.
-for name, U in [("exact", U_exact), ("MLP", U_MLP), ("KANN", U_KANN)]:
-    plot_field(
-        X,
-        T_grid,
-        U,
-        "x",
-        "t",
-        f"1D Wave - {name}",
-        str(FIGS / f"1D_wave_field_{name}.pdf"),
-        cbar_label="u(x,t)",
-    )
+    # ---------- Plotting ----------
+    # Median prediction per model, reshaped back onto the (x, t) grid.
+    fields = {
+        name: np.median(np.stack([r["u"] for r in runs]), axis=0).reshape(X.shape)
+        for name, runs in results.items()
+    }
+    figs = OUT_DIR / "figs"
 
-for name, U in [("MLP", U_MLP), ("KANN", U_KANN)]:
-    plot_field(
-        X,
-        T_grid,
-        jnp.abs(U - U_exact),
-        "x",
-        "t",
-        f"1D Wave - |{name} - exact|",
-        str(FIGS / f"1D_wave_error_{name}.pdf"),
-        cmap="magma",
-        cbar_label="abs. error",
-    )
+    # Snapshots u(x, .) at a few fixed times.
+    for j in [0, len(tg) // 4, len(tg) // 2]:
+        plot_solutions(
+            xg,
+            {"exact": U_exact[:, j], **{n: U[:, j] for n, U in fields.items()}},
+            "x",
+            "u(x,t)",
+            f"1D Wave at t = {float(tg[j]):.2f}",
+            str(figs / f"1D_wave_snapshot_t{j}.pdf"),
+        )
+
+    # Full space-time fields and their error against the exact solution.
+    for name, U in [("exact", U_exact), *fields.items()]:
+        plot_field(
+            X,
+            T_grid,
+            U,
+            "x",
+            "t",
+            f"1D Wave - {name}",
+            str(figs / f"1D_wave_field_{name}.pdf"),
+            cbar_label="u(x,t)",
+        )
+
+    for name, U in fields.items():
+        plot_field(
+            X,
+            T_grid,
+            jnp.abs(U - U_exact),
+            "x",
+            "t",
+            f"1D Wave - |{name} - exact|",
+            str(figs / f"1D_wave_error_{name}.pdf"),
+            cmap="magma",
+            cbar_label="abs. error",
+        )
+
+
+if __name__ == "__main__":
+    main()

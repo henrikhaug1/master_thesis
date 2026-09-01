@@ -66,7 +66,7 @@ def compare_models(
     loss: LossFn,
     predict_fn: PredictFn,
     u_exact: Array,
-    x: Array,
+    x: Array | None = None,
     seeds: Sequence[int] = (0, 1, 2),
     out_dir: str | Path = ".",
     title: str = "",
@@ -79,8 +79,11 @@ def compare_models(
     Args:
         models: {name: model_fn}, where model_fn(rngs) -> model.
         loss: model -> scalar, the same closure `train` expects.
-        predict_fn: model -> predictions aligned with `x` and `u_exact`.
-        x, u_exact: the grid and reference solution used for the error metrics.
+        predict_fn: model -> predictions aligned with `u_exact`.
+        u_exact: reference solution used for the error metrics.
+        x: 1-D grid the predictions are plotted against. Pass None for problems
+            with more than one input (the metrics still run on the flattened
+            predictions; plot the fields yourself from the returned runs).
         out_dir: results/*.npz and figs/*.pdf are written under here.
 
     Returns {name: [run dicts]}.
@@ -95,31 +98,33 @@ def compare_models(
         print(f"\n ----- MODEL: {name} -----")
         runs = run_seeds(model_fn, loss, predict_fn, u_exact, seeds=seeds, **train_kw)
         results[name] = runs
-        np.savez(
-            results_dir / f"{name}.npz",
-            histories=np.stack([r["history"] for r in runs]),
-            predictions=np.stack([r["u"] for r in runs]),
-            seeds=np.array([r["seed"] for r in runs]),
-            rel_l2=np.array([r["rel_l2"] for r in runs]),
-            n_params=runs[0]["n_params"],
-            x=np.asarray(x),
-            u_exact=np.asarray(u_exact),
-        )
+        payload = {
+            "histories": np.stack([r["history"] for r in runs]),
+            "predictions": np.stack([r["u"] for r in runs]),
+            "seeds": np.array([r["seed"] for r in runs]),
+            "rel_l2": np.array([r["rel_l2"] for r in runs]),
+            "n_params": runs[0]["n_params"],
+            "u_exact": np.asarray(u_exact),
+        }
+        if x is not None:
+            payload["x"] = np.asarray(x)
+        np.savez(results_dir / f"{name}.npz", **payload)
 
     slug = title.replace(" ", "_") or "comparison"
 
     plot_loss_bands(
         {n: np.stack([r["history"] for r in runs]) for n, runs in results.items()},
         str(figs / f"{slug}_loss.pdf"),
-        f"{title} - loss (median, IQR over {len(seeds)} seeds)",
+        f"{title} - loss (median over {len(seeds)} seeds)",
     )
 
-    curves = {"exact": jnp.asarray(u_exact)}
-    for name, runs in results.items():
-        curves[name] = np.median(np.stack([r["u"] for r in runs]), axis=0)
-    plot_solutions(
-        x, curves, x_label, y_label, title, str(figs / f"{slug}_solutions.pdf")
-    )
+    if x is not None:
+        curves = {"exact": jnp.asarray(u_exact)}
+        for name, runs in results.items():
+            curves[name] = np.median(np.stack([r["u"] for r in runs]), axis=0)
+        plot_solutions(
+            x, curves, x_label, y_label, title, str(figs / f"{slug}_solutions.pdf")
+        )
 
     print()
     summarize(results)

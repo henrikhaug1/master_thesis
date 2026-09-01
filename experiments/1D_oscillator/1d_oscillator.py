@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import flax.nnx as nnx
 
 from src.pinns import MLP, KANN
+from src.bases import ChebyshevBasis
 from src.loss import loss_fn
 from src.utils import derivatives
 from src.sweep import compare_models
@@ -36,8 +37,11 @@ def ic_fn(model, t0=jnp.array([0.0]), u0=1.0, v0=0.0):
     return jnp.mean((u - u0) ** 2) + jnp.mean((u_t - v0) ** 2)
 
 
+T_MIN, T_MAX = 0.0, 10.0
+
+
 def main():
-    t = jnp.linspace(0, 10, 200)
+    t = jnp.linspace(T_MIN, T_MAX, 200)
 
     # --------- Analytical ----------
     analytical_solution = exact_solution(t)
@@ -47,6 +51,14 @@ def main():
         models={
             "MLP": lambda rngs: MLP([1, 48, 48, 48, 1], act_fun=nnx.silu, rngs=rngs),
             "KANN_spline": lambda rngs: KANN([1, 16, 16, 16, 1], rngs=rngs),
+            "KANN_cheb": lambda rngs: KANN(
+                [1, 16, 16, 16, 1],
+                basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0),
+                input_basis_fn=lambda: ChebyshevBasis(
+                    degree=5, domain=(T_MIN, T_MAX)
+                ),
+                rngs=rngs,
+            ),
         },
         loss=lambda model: loss_fn(model, t, residual, ic_fn),
         predict_fn=lambda model: model(t[:, None])[:, 0],

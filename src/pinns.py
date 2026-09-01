@@ -46,9 +46,30 @@ class KANLinear(nnx.Module):
 
 
 class KANN(nnx.Module):
-    def __init__(self, layer_sizes, basis_fn=BSplineBasis, *, rngs: nnx.Rngs):
+    def __init__(
+        self,
+        layer_sizes,
+        basis_fn=BSplineBasis,
+        input_basis_fn=None,
+        *,
+        rngs: nnx.Rngs,
+    ):
+        """
+        Args:
+            basis_fn: zero-arg factory for the basis of every layer.
+            input_basis_fn: optional zero-arg factory used for the first layer
+                only. The first layer is the one whose input range is known --
+                it is the domain of the PDE -- so it is the one that can be
+                given a basis pinned to that domain. Defaults to basis_fn.
+        """
+        input_basis_fn = input_basis_fn or basis_fn
         self.layers = nnx.List(
-            KANLinear(layer_sizes[i], layer_sizes[i + 1], basis=basis_fn(), rngs=rngs)
+            KANLinear(
+                layer_sizes[i],
+                layer_sizes[i + 1],
+                basis=(input_basis_fn if i == 0 else basis_fn)(),
+                rngs=rngs,
+            )
             for i in range(len(layer_sizes) - 1)
         )
 

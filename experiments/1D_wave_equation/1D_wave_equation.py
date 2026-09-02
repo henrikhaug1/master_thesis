@@ -9,12 +9,12 @@ import jax.numpy as jnp
 import numpy as np
 import flax.nnx as nnx
 
-from src.pinns import MLP, KANN
+from src.pinns import MLP, KANN, HardConstraint
 from src.loss import loss_fn
 from src.utils import partials
 from src.plotting import plot_solutions, plot_field
 from src.sweep import compare_models
-from src.bases import BSplineBasis
+from src.bases import BSplineBasis, ChebyshevBasis
 
 
 c = 1.0
@@ -23,6 +23,8 @@ k = jnp.pi / L
 T = 2 * L / c  # one full period of cos(c k t)
 
 OUT_DIR = Path(__file__).parent
+
+HARD_BC = True
 
 
 def exact_solution(x, t):
@@ -48,6 +50,13 @@ def ic_fn(model, x):
     return jnp.mean((u - jnp.sin(k * x)) ** 2) + jnp.mean(u_t**2)
 
 
+def hard_bc(model_fn):
+    """u = 4x(L-x)/L^2 * N(x,t), so u(0,t) = u(L,t) = 0 exactly."""
+    return lambda rngs: HardConstraint(
+        model_fn(rngs), phi=lambda xt: 4.0 * xt[:, :1] * (L - xt[:, :1]) / L**2
+    )
+
+
 def main():
     xg = jnp.linspace(0, L, 60)
     tg = jnp.linspace(0, T, 60)
@@ -60,22 +69,40 @@ def main():
     XT = jnp.stack([X.ravel(), T_grid.ravel()], axis=-1)
     U_exact = exact_solution(X, T_grid)
 
-    results = compare_models(
-        models={
-            "MLP": lambda rngs: MLP([2, 96, 96, 96, 1], act_fun=nnx.silu, rngs=rngs),
-            "KANN": lambda rngs: KANN(
-                [2, 32, 32, 32, 1],
-                basis_fn=lambda: BSplineBasis(grid_range=(-0.5, 13.0)),
-                rngs=rngs,
+    models = {
+        "MLP": lambda rngs: MLP([2, 96, 96, 96, 1], act_fun=nnx.silu, rngs=rngs),
+        "KANN_spline": lambda rngs: KANN(
+            [2, 32, 32, 32, 1],
+            basis_fn=lambda: BSplineBasis(grid_range=(-0.5, 13.0)),
+            rngs=rngs,
+        ),
+        "KANN_cheb": lambda rngs: KANN(
+            [2, 32, 32, 32, 1],
+            basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0),
+            input_basis_fn=lambda: ChebyshevBasis(
+                degree=5, domain=(jnp.zeros(2), jnp.array([L, T]))
             ),
-        },
-        loss=lambda model: loss_fn(
+            rngs=rngs,
+        ),
+    }
+
+    if HARD_BC:
+        models = {name: hard_bc(fn) for name, fn in models.items()}
+        loss = lambda model: loss_fn(
+            model, collocation, residual=residual, ic_fn=lambda m: ic_fn(m, x_ic)
+        )
+    else:
+        loss = lambda model: loss_fn(
             model,
             collocation,
             residual=residual,
             ic_fn=lambda m: ic_fn(m, x_ic),
             bc_fn=lambda m: bc_fn(m, t_bc),
-        ),
+        )
+
+    results = compare_models(
+        models=models,
+        loss=loss,
         predict_fn=lambda model: model(XT)[:, 0],
         u_exact=U_exact.ravel(),
         x=None,

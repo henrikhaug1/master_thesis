@@ -54,14 +54,6 @@ class KANN(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-        """
-        Args:
-            basis_fn: zero-arg factory for the basis of every layer.
-            input_basis_fn: optional zero-arg factory used for the first layer
-                only. The first layer is the one whose input range is known --
-                it is the domain of the PDE -- so it is the one that can be
-                given a basis pinned to that domain. Defaults to basis_fn.
-        """
         input_basis_fn = input_basis_fn or basis_fn
         self.layers = nnx.List(
             KANLinear(
@@ -78,3 +70,32 @@ class KANN(nnx.Module):
         for layer in self.layers:
             x = layer(x)
         return x
+
+
+class HardConstraint(nnx.Module):
+    """Wrap a model so constraints hold by construction: u = g(x) + phi(x) * net(x).
+
+    `phi` vanishes exactly where the constraint is imposed -- phi(x) = 4x(1-x)
+    on [0, 1] pins u(0) = u(1) = 0 -- and `g` supplies the value taken there,
+    defaulting to zero. Constraints enforced this way need no penalty term, so
+    they cannot be traded off against the residual the way a soft term can.
+
+    Both are plain callables mapping the raw input (N, d) to something that
+    broadcasts against (N, 1), and are static under jit like `MLP.act_fun`.
+    Scale phi so max|phi| is about 1: a phi peaking well above 1 rescales the
+    output and the residual with it.
+
+    Args:
+        net: the model being wrapped; its parameters are the only ones here.
+        phi: (N, d) -> (N, 1), zero where the constraint applies.
+        g: (N, d) -> (N, 1), the constrained value. None means zero.
+    """
+
+    def __init__(self, net, phi, g=None):
+        self.net = net
+        self.phi = phi
+        self.g = g
+
+    def __call__(self, x):
+        u = self.phi(x) * self.net(x)
+        return u if self.g is None else u + self.g(x)

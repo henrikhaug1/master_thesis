@@ -12,10 +12,11 @@ from src.pinns import MLP, KANN
 from src.loss import loss_fn
 from src.utils import derivatives
 from src.sweep import compare_models
-from src.bases import BSplineBasis
+from src.bases import BSplineBasis, ChebyshevBasis
 
 
 pi = jnp.pi
+X_MIN, X_MAX = 0.0, 1.0
 OUT_DIR = Path(__file__).parent
 
 
@@ -39,15 +40,21 @@ def bc_fn(model, x0=jnp.array([0.0]), x1=jnp.array([1.0])):
 
 
 def main():
-    x = jnp.linspace(0, 1, 200)
+    x = jnp.linspace(X_MIN, X_MAX, 200)
     analytical_solution = exact_solution(x)
 
     compare_models(
         models={
             "MLP": lambda rngs: MLP([1, 48, 48, 48, 1], act_fun=nnx.silu, rngs=rngs),
-            "KANN": lambda rngs: KANN(
+            "KANN_spline": lambda rngs: KANN(
                 [1, 16, 16, 16, 1],
                 basis_fn=BSplineBasis,
+                rngs=rngs,
+            ),
+            "KANN_cheb": lambda rngs: KANN(
+                [1, 16, 16, 16, 1],
+                basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0),
+                input_basis_fn=lambda: ChebyshevBasis(degree=5, domain=(X_MIN, X_MAX)),
                 rngs=rngs,
             ),
         },

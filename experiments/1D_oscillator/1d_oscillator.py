@@ -54,9 +54,7 @@ def main():
             "KANN_cheb": lambda rngs: KANN(
                 [1, 16, 16, 16, 1],
                 basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0),
-                input_basis_fn=lambda: ChebyshevBasis(
-                    degree=5, domain=(T_MIN, T_MAX)
-                ),
+                input_basis_fn=lambda: ChebyshevBasis(degree=5, domain=(T_MIN, T_MAX)),
                 rngs=rngs,
             ),
         },

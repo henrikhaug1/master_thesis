@@ -5,8 +5,11 @@ from src.bases import BSplineBasis
 
 
 class MLP(nnx.Module):
-    def __init__(self, layer_sizes: list, act_fun=nnx.tanh, *, rngs: nnx.Rngs):
+    def __init__(
+        self, layer_sizes: list, act_fun=nnx.tanh, out_fun=None, *, rngs: nnx.Rngs
+    ):
         self.act_fun = act_fun
+        self.out_fun = out_fun
         self.layers = nnx.List(
             nnx.Linear(layer_sizes[i], layer_sizes[i + 1], rngs=rngs)
             for i in range(len(layer_sizes) - 1)
@@ -16,7 +19,8 @@ class MLP(nnx.Module):
         x = t
         for layer in self.layers[:-1]:
             x = self.act_fun(layer(x))  # activation on hidden layers
-        return self.layers[-1](x)  # last layer linear
+        x = self.layers[-1](x)
+        return x if self.out_fun is None else self.out_fun(x)  # last layer linear
 
 
 class KANLinear(nnx.Module):

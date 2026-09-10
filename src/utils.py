@@ -8,8 +8,12 @@ def derivatives(model, x, order=2):
 
     fns = [u_scalar]
     for _ in range(order):
-        fns.append(jax.grad(fns[-1]))
-    return [jax.vmap(f)(x) for f in fns]
+        fns.append(jax.jacfwd(fns[-1]))  # jacrev (reverse jacobian), jacfwd
+
+    def all_derivs(xi):
+        return tuple(f(xi) for f in fns)
+
+    return jax.vmap(all_derivs)(x)
 
 
 def partials(model, x, t):

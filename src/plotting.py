@@ -51,7 +51,11 @@ def plot_loss_bands(
     band: str = "iqr",
 ):
     """
-    Loss curves over several seeds, drawn as a central line with a spread band
+    Loss curves over several seeds, drawn as a central line with a spread band.
+
+    Histories that stopped early are NaN-padded to a common length, so every
+    reduction here is nan-aware: past the first stop the band is taken over the
+    seeds still running, and it ends where the last one stopped.
     """
     plt.figure(figsize=(8, 4))
     for label, hist in histories.items():
@@ -59,10 +63,10 @@ def plot_loss_bands(
         steps = jnp.arange(h.shape[1])
         if band == "std":
             log_h = jnp.log10(jnp.maximum(h, 1e-30))
-            mean, std = log_h.mean(axis=0), log_h.std(axis=0)
+            mean, std = jnp.nanmean(log_h, axis=0), jnp.nanstd(log_h, axis=0)
             mid, low, high = 10**mean, 10 ** (mean - std), 10 ** (mean + std)
         else:
-            low, mid, high = jnp.percentile(h, jnp.array([25.0, 50.0, 75.0]), axis=0)
+            low, mid, high = jnp.nanpercentile(h, jnp.array([25.0, 50.0, 75.0]), axis=0)
         (line,) = plt.plot(steps, mid, label=label)
         if h.shape[0] > 1:
             plt.fill_between(steps, low, high, alpha=0.25, color=line.get_color())

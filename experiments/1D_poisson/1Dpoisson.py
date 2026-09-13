@@ -53,7 +53,12 @@ def main():
 
     models = {
         "MLP": lambda rngs: MLP([1, 48, 48, 48, 1], act_fun=nnx.silu, rngs=rngs),
-        "KANN_spline": lambda rngs: KANN(
+        "KANN_spline_same_width": lambda rngs: KANN(
+            [1, 48, 48, 48, 1],
+            basis_fn=BSplineBasis,
+            rngs=rngs,
+        ),
+        "KANN_spline_same_params": lambda rngs: KANN(
             [1, 16, 16, 16, 1],
             basis_fn=BSplineBasis,
             rngs=rngs,

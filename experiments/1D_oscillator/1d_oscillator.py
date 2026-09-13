@@ -51,7 +51,8 @@ def main():
     compare_models(
         models={
             "MLP": lambda rngs: MLP([1, 48, 48, 48, 1], act_fun=nnx.silu, rngs=rngs),
-            "KANN_spline": lambda rngs: KANN([1, 16, 16, 16, 1], rngs=rngs),
+            "KANN_spline_same_width": lambda rngs: KANN([1, 48, 48, 48, 1], rngs=rngs),
+            "KANN_spline_same_params": lambda rngs: KANN([1, 16, 16, 16, 1], rngs=rngs),
             "KANN_cheb": lambda rngs: KANN(
                 [1, 16, 16, 16, 1],
                 basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0),
@@ -60,7 +61,7 @@ def main():
             ),
         },
         loss=lambda model: loss_fn(model, pts, residual, ic_fn),
-        predict_fn=lambda model: model(pts[:, None])[:, 0],
+        predict_fn=lambda model: model(pts)[:, 0],
         u_exact=analytical_solution,
         x=t,
         seeds=(0, 1, 2),

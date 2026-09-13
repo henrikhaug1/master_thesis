@@ -83,10 +83,15 @@ def main():
 
     models = {
         "MLP": lambda rngs: MLP([2, 96, 96, 96, 1], act_fun=nnx.silu, rngs=rngs),
-        "KANN_spline": lambda rngs: KANN(
+        "KANN_spline_same_width": lambda rngs: KANN(
+            [2, 96, 96, 96, 1],
+            basis_fn=BSplineBasis,
+            input_basis_fn=lambda: BSplineBasis(grid_range=(X_MIN, X_MAX)),
+            rngs=rngs,
+        ),
+        "KANN_spline_same_params": lambda rngs: KANN(
             [2, 32, 32, 32, 1],
             basis_fn=BSplineBasis,
-            # The input range is known exactly here, unlike the hidden layers'.
             input_basis_fn=lambda: BSplineBasis(grid_range=(X_MIN, X_MAX)),
             rngs=rngs,
         ),

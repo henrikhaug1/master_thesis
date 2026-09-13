@@ -74,7 +74,15 @@ def main():
 
     models = {
         "MLP": lambda rngs: MLP([2, 96, 96, 96, 1], act_fun=nnx.silu, rngs=rngs),
-        "KANN_spline": lambda rngs: KANN(
+        # Same layout as the MLP -- every edge carries n_basis coefficients, so
+        # this costs roughly 9x the MLP's parameters (and trains far slower).
+        "KANN_spline_same_width": lambda rngs: KANN(
+            [2, 96, 96, 96, 1],
+            basis_fn=lambda: BSplineBasis(grid_range=(-0.5, 13.0)),
+            rngs=rngs,
+        ),
+        # Width cut until the parameter count matches the MLP instead.
+        "KANN_spline_same_params": lambda rngs: KANN(
             [2, 32, 32, 32, 1],
             basis_fn=lambda: BSplineBasis(grid_range=(-0.5, 13.0)),
             rngs=rngs,

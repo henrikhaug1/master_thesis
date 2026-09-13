@@ -11,7 +11,7 @@ import flax.nnx as nnx
 
 from src.pinns import MLP, KANN, HardConstraint
 from src.loss import loss_fn
-from src.utils import partials
+from src.utils import derivatives, laplacian
 from src.plotting import plot_solutions, plot_field
 from src.sweep import compare_models
 from src.bases import BSplineBasis, ChebyshevBasis
@@ -31,23 +31,19 @@ def exact_solution(x, t):
     return jnp.sin(k * x) * jnp.cos(c * k * t)
 
 
-def residual(model, x, t):
-    u, u_x, u_t, u_xx, u_tt = partials(model, x, t)
-    return u_tt - (c**2 * u_xx)
+def residual(model, pts):
+    u, g, H = derivatives(model, pts, order=2)
+    return H[:, 1, 1] - (c**2 * H[:, 0, 0])
 
 
-def bc_fn(model, t):
-    x0 = jnp.zeros_like(t)
-    xL = jnp.full_like(t, L)
-    u_left = model(jnp.stack([x0, t], axis=-1))[:, 0]
-    u_right = model(jnp.stack([xL, t], axis=-1))[:, 0]
-    return jnp.mean(u_left**2) + jnp.mean(u_right**2)
+def bc_fn(model, bc_pts):
+    u = model(bc_pts)[:, 0]
+    return jnp.mean(u**2)
 
 
-def ic_fn(model, x):
-    t0 = jnp.zeros_like(x)
-    u, u_x, u_t, u_xx, u_tt = partials(model, x, t0)
-    return jnp.mean((u - jnp.sin(k * x)) ** 2) + jnp.mean(u_t**2)
+def ic_fn(model, ic_pts):
+    u, g = derivatives(model, ic_pts, order=1)
+    return jnp.mean((u - jnp.sin(k * ic_pts[:, 0])) ** 2) + jnp.mean(g[:, 1] ** 2)
 
 
 def hard_bc(model_fn):
@@ -61,12 +57,19 @@ def main():
     xg = jnp.linspace(0, L, 60)
     tg = jnp.linspace(0, T, 60)
     X, T_grid = jnp.meshgrid(xg, tg, indexing="ij")
-    collocation = (X.ravel(), T_grid.ravel())
+    pts = jnp.stack([X.ravel(), T_grid.ravel()], axis=-1)
 
     x_ic = jnp.linspace(0, L, 100)  # bottom edge t = 0
-    t_bc = jnp.linspace(0, T, 100)  # side edges x = 0, L
+    ic_pts = jnp.stack([x_ic, jnp.zeros_like(x_ic)], axis=-1)
 
-    XT = jnp.stack([X.ravel(), T_grid.ravel()], axis=-1)
+    t_bc = jnp.linspace(0, T, 100)  # side edges x = 0, L
+    bc_pts = jnp.concatenate(
+        [
+            jnp.stack([jnp.zeros_like(t_bc), t_bc], axis=-1),
+            jnp.stack([jnp.full_like(t_bc, L), t_bc], axis=-1),
+        ]
+    )
+
     U_exact = exact_solution(X, T_grid)
 
     models = {
@@ -89,21 +92,22 @@ def main():
     if HARD_BC:
         models = {name: hard_bc(fn) for name, fn in models.items()}
         loss = lambda model: loss_fn(
-            model, collocation, residual=residual, ic_fn=lambda m: ic_fn(m, x_ic)
+            model, pts, residual=residual, ic_fn=lambda m: ic_fn(m, ic_pts)
         )
     else:
         loss = lambda model: loss_fn(
             model,
-            collocation,
+            pts,
             residual=residual,
-            ic_fn=lambda m: ic_fn(m, x_ic),
-            bc_fn=lambda m: bc_fn(m, t_bc),
+            ic_fn=lambda m: ic_fn(m, ic_pts),
+            bc_fn=lambda m: bc_fn(m, bc_pts),
+            w_bc=2.0,
         )
 
     results = compare_models(
         models=models,
         loss=loss,
-        predict_fn=lambda model: model(XT)[:, 0],
+        predict_fn=lambda model: model(pts)[:, 0],
         u_exact=U_exact.ravel(),
         x=None,
         seeds=(0, 1, 2),

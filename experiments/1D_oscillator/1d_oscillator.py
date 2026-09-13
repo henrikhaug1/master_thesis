@@ -27,14 +27,14 @@ def exact_solution(t):
     return jnp.exp(-mu / 2 * t) * jnp.cos(w * t)
 
 
-def residual(model, t, m=m, mu=mu, k=k):
-    u, u_t, u_tt = derivatives(model, t, order=2)
-    return m * u_tt + mu * u_t + k * u
+def residual(model, pts, m=m, mu=mu, k=k):
+    u, g, H = derivatives(model, pts, order=2)
+    return m * H[:, 0, 0] + mu * g[:, 0] + k * u
 
 
-def ic_fn(model, t0=jnp.array([0.0]), u0=1.0, v0=0.0):
-    u, u_t = derivatives(model, t0, order=1)
-    return jnp.mean((u - u0) ** 2) + jnp.mean((u_t - v0) ** 2)
+def ic_fn(model, t0=jnp.array([[0.0]]), u0=1.0, v0=0.0):
+    u, g = derivatives(model, t0, order=1)
+    return jnp.mean((u - u0) ** 2) + jnp.mean((g[:, 0] - v0) ** 2)
 
 
 T_MIN, T_MAX = 0.0, 10.0
@@ -42,6 +42,7 @@ T_MIN, T_MAX = 0.0, 10.0
 
 def main():
     t = jnp.linspace(T_MIN, T_MAX, 200)
+    pts = t[:, None]
 
     # --------- Analytical ----------
     analytical_solution = exact_solution(t)
@@ -58,8 +59,8 @@ def main():
                 rngs=rngs,
             ),
         },
-        loss=lambda model: loss_fn(model, t, residual, ic_fn),
-        predict_fn=lambda model: model(t[:, None])[:, 0],
+        loss=lambda model: loss_fn(model, pts, residual, ic_fn),
+        predict_fn=lambda model: model(pts[:, None])[:, 0],
         u_exact=analytical_solution,
         x=t,
         seeds=(0, 1, 2),

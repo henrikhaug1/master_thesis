@@ -19,6 +19,67 @@ def plot_solutions(
     plt.close()
 
 
+def plot_solution_grid(
+    x,
+    exact,
+    predictions: dict,
+    x_label: str,
+    y_label: str,
+    title: str,
+    filename: str,
+    ncols: int = 2,
+):
+    """One panel per model: the exact solution in red, that model's in dashed blue.
+
+    Overlaying every model on one axis hides the small deviations that matter
+    once they all roughly fit; a panel each keeps the comparison against the
+    exact curve readable. Axes are shared, so the panels stay comparable.
+    """
+    x = jnp.asarray(x)
+    exact = jnp.asarray(exact)
+    n = len(predictions)
+    ncols = min(ncols, n)
+    nrows = -(-n // ncols)  # ceil
+
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(5.5 * ncols, 3.2 * nrows),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+    )
+    flat = axes.ravel()
+
+    for i, (label, y) in enumerate(predictions.items()):
+        ax = flat[i]
+        ax.plot(x, exact, color="red", linewidth=1.8, label="exact")
+        ax.plot(
+            x,
+            jnp.asarray(y),
+            color="blue",
+            linestyle="--",
+            linewidth=1.5,
+            label="prediction",
+        )
+        ax.set_title(label)
+        ax.grid(True, alpha=0.3)
+        if i >= n - ncols:  # bottom-most panel of its column
+            ax.set_xlabel(x_label)
+        if i % ncols == 0:
+            ax.set_ylabel(y_label)
+
+    for ax in flat[n:]:  # unused cells in a ragged grid
+        ax.axis("off")
+
+    flat[0].legend(loc="best")
+    if title:
+        fig.suptitle(title)
+    fig.tight_layout()
+    fig.savefig(filename, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_field(
     X,
     Y,

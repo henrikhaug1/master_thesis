@@ -110,6 +110,8 @@ def plot_loss_bands(
     filename: str,
     title: str = "Training loss",
     band: str = "iqr",
+    steps=None,
+    y_label: str = "loss",
 ):
     """
     Loss curves over several seeds, drawn as a central line with a spread band.
@@ -121,18 +123,21 @@ def plot_loss_bands(
     plt.figure(figsize=(8, 4))
     for label, hist in histories.items():
         h = jnp.atleast_2d(jnp.asarray(hist))
-        steps = jnp.arange(h.shape[1])
+        if steps is None:
+            x = jnp.arange(h.shape[1])
+        else:
+            x = jnp.asarray(steps[label] if isinstance(steps, dict) else steps)
         if band == "std":
             log_h = jnp.log10(jnp.maximum(h, 1e-30))
             mean, std = jnp.nanmean(log_h, axis=0), jnp.nanstd(log_h, axis=0)
             mid, low, high = 10**mean, 10 ** (mean - std), 10 ** (mean + std)
         else:
             low, mid, high = jnp.nanpercentile(h, jnp.array([25.0, 50.0, 75.0]), axis=0)
-        (line,) = plt.plot(steps, mid, label=label)
+        (line,) = plt.plot(x, mid, label=label)
         if h.shape[0] > 1:
-            plt.fill_between(steps, low, high, alpha=0.25, color=line.get_color())
+            plt.fill_between(x, low, high, alpha=0.25, color=line.get_color())
     plt.xlabel("step")
-    plt.ylabel("loss")
+    plt.ylabel(y_label)
     plt.yscale("log")
     plt.title(title)
     plt.legend()

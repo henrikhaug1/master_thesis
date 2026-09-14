@@ -13,6 +13,8 @@ class TrainResult:
     best_loss: float
     n_steps: int
     stop_reason: str
+    metric_history: jnp.ndarray | None = None
+    metric_steps: jnp.ndarray | None = None
 
 
 def train(
@@ -25,6 +27,7 @@ def train(
     rel_tol=1e-6,
     patience=5,
     verbose_every=500,
+    metric_fn=None,
 ):
     optimizer = nnx.Optimizer(model, optax.adam(lr), wrt=nnx.Param)
 
@@ -35,6 +38,7 @@ def train(
         return loss_val
 
     loss_history = []
+    metric_history, metric_steps = [], []
     best_loss, best_params = float("inf"), None
 
     start = time.perf_counter()
@@ -50,6 +54,9 @@ def train(
             if restore_best and checking
             else None
         )
+        if checking and metric_fn is not None:
+            metric_steps.append(i)
+            metric_history.append(float(metric_fn(model)))
         loss_val = train_step(model, optimizer)
         loss_history.append(loss_val)
 
@@ -89,4 +96,6 @@ def train(
         best_loss=best_loss,
         n_steps=len(loss_history),
         stop_reason=stop_reason,
+        metric_history=jnp.asarray(metric_history) if metric_fn else None,
+        metric_steps=jnp.asarray(metric_steps) if metric_fn else None,
     )

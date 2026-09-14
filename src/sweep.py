@@ -30,7 +30,14 @@ def run_seeds(
     for s in seeds:
         print(f"\n ----- Seed: {s} -----")
         model = model_fn(nnx.Rngs(s))
-        res = train(model, loss, **train_kw)
+        # The loss tracks the PDE residual; this tracks the error against the
+        # exact solution, which is a different curve -- see TrainResult.
+        res = train(
+            model,
+            loss,
+            metric_fn=lambda m: rel_l2_error(predict_fn(m), u_exact),
+            **train_kw,
+        )
         hist = np.asarray(res.loss_history, dtype=float)
         u = predict_fn(model)
         out.append(
@@ -48,25 +55,33 @@ def run_seeds(
                 "n_steps": int(res.n_steps),
                 "stop_reason": res.stop_reason,
                 "history": hist,
+                "rel_l2_history": np.asarray(res.metric_history, dtype=float),
+                "metric_steps": np.asarray(res.metric_steps, dtype=int),
                 "u": np.asarray(u),
             }
         )
     return out
 
 
-def stack_histories(runs: Sequence[Run]) -> np.ndarray:
-    """Loss histories as one (n_runs, max_steps) array, NaN-padded.
+def stack_histories(runs: Sequence[Run], key: str = "history") -> np.ndarray:
+    """Per-seed curves as one (n_runs, max_len) array, NaN-padded.
 
     Early stopping means two seeds of the same model can stop at different
-    steps, so the histories are ragged and cannot be stacked directly. Padding
+    steps, so the curves are ragged and cannot be stacked directly. Padding
     with NaN keeps the step axis aligned; plotting and aggregation use the
     nan-aware reductions.
     """
-    hists = [np.asarray(r["history"], dtype=float) for r in runs]
+    hists = [np.asarray(r[key], dtype=float) for r in runs]
     out = np.full((len(hists), max(len(h) for h in hists)), np.nan)
     for i, h in enumerate(hists):
         out[i, : len(h)] = h
     return out
+
+
+def _metric_steps(runs: Sequence[Run]) -> np.ndarray:
+    """Step indices for the metric curves -- the longest seed's, to match the
+    padded width of `stack_histories(runs, "rel_l2_history")`."""
+    return np.asarray(max((r["metric_steps"] for r in runs), key=len), dtype=int)
 
 
 def summarize(results: Results) -> None:
@@ -128,6 +143,8 @@ def compare_models(
         results[name] = runs
         payload = {
             "histories": stack_histories(runs),
+            "rel_l2_histories": stack_histories(runs, "rel_l2_history"),
+            "metric_steps": _metric_steps(runs),
             "predictions": np.stack([r["u"] for r in runs]),
             "seeds": np.array([r["seed"] for r in runs]),
             "rel_l2": np.array([r["rel_l2"] for r in runs]),
@@ -144,6 +161,14 @@ def compare_models(
         {n: stack_histories(runs) for n, runs in results.items()},
         str(figs / f"{slug}_loss.pdf"),
         f"{title} - loss (median over {len(seeds)} seeds)",
+    )
+
+    plot_loss_bands(
+        {n: stack_histories(runs, "rel_l2_history") for n, runs in results.items()},
+        str(figs / f"{slug}_rel_l2.pdf"),
+        f"{title} - relative L2 error (median over {len(seeds)} seeds)",
+        steps={n: _metric_steps(runs) for n, runs in results.items()},
+        y_label="rel. L2 error",
     )
 
     if x is not None:

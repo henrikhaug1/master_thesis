@@ -1,0 +1,26 @@
+# FEniCSx (DOLFINx) environment for the FEM reference solutions.
+#
+# Two disjoint environments on purpose: the PINN code runs in the uv venv on the
+# host (JAX, no dolfinx), the FEM code runs in here (dolfinx, no JAX). That is
+# why src/fem.py stays pure numpy -- importing src.metrics, or anything else
+# JAX-backed, from it would break this container.
+#
+#   docker compose up -d                      # start it; shows in Docker Desktop
+#   docker compose exec fem python3 experiments/1D_poisson/1Dpoisson_fem.py
+#   docker compose exec fem bash              # interactive shell
+#   docker compose down                       # stop and remove it
+#
+# For a one-off run without starting the service, `run` still works and
+# overrides the idle command:
+#
+#   docker compose run --rm fem python3 experiments/1D_poisson/1Dpoisson_fem.py
+
+services:
+  fem:
+    image: dolfinx/dolfinx:stable
+    container_name: master_thesis_fem
+    working_dir: /work
+    volumes:
+      - .:/work
+    command: sleep infinity
+    stop_grace_period: 0s

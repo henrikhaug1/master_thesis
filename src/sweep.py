@@ -9,7 +9,7 @@ from jax import Array
 
 from src.train import train
 from src.metrics import rel_l2_error, max_error, n_params
-from src.plotting import plot_loss_bands, plot_solutions
+from src.plotting import plot_loss_bands, plot_solution_grid
 
 ModelFn = Callable[[nnx.Rngs], nnx.Module]
 LossFn = Callable[[nnx.Module], Array]
@@ -147,11 +147,18 @@ def compare_models(
     )
 
     if x is not None:
-        curves = {"exact": jnp.asarray(u_exact)}
-        for name, runs in results.items():
-            curves[name] = np.median(np.stack([r["u"] for r in runs]), axis=0)
-        plot_solutions(
-            x, curves, x_label, y_label, title, str(figs / f"{slug}_solutions.pdf")
+        curves = {
+            name: np.median(np.stack([r["u"] for r in runs]), axis=0)
+            for name, runs in results.items()
+        }
+        plot_solution_grid(
+            x,
+            u_exact,
+            curves,
+            x_label,
+            y_label,
+            title,
+            str(figs / f"{slug}_solutions.pdf"),
         )
 
     print()

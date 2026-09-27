@@ -30,8 +30,6 @@ def run_seeds(
     for s in seeds:
         print(f"\n ----- Seed: {s} -----")
         model = model_fn(nnx.Rngs(s))
-        # The loss tracks the PDE residual; this tracks the error against the
-        # exact solution, which is a different curve -- see TrainResult.
         res = train(
             model,
             loss,

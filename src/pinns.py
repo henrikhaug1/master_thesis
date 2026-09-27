@@ -30,22 +30,29 @@ class KANLinear(nnx.Module):
         out_features: int,
         basis=None,
         *,
+        decay_in_forward: bool = False,
         rngs: nnx.Rngs,
     ):
         self.basis = basis if basis is not None else BSplineBasis()
+        self.decay_in_forward = decay_in_forward
         key1, key2 = jax.random.split(rngs.params())
 
         self.base_weight = nnx.Param(
             nnx.initializers.he_uniform()(key1, (in_features, out_features))
         )
-        self.coeff = nnx.Param(
-            0.1
-            * jax.random.normal(key2, (in_features, out_features, self.basis.n_basis))
+        coeff = 0.1 * jax.random.normal(
+            key2, (in_features, out_features, self.basis.n_basis)
         )
+
+        if not decay_in_forward:
+            coeff = coeff * self.basis.coeff_scale
+        self.coeff = nnx.Param(coeff)
 
     def __call__(self, x):
         base_out = jax.nn.silu(x) @ self.base_weight
         phi = self.basis(x)
+        if self.decay_in_forward:
+            phi = phi * self.basis.coeff_scale
         return base_out + jnp.einsum("bic, ioc->bo", phi, self.coeff)
 
 

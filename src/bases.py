@@ -26,6 +26,7 @@ class BSplineBasis:
             jnp.arange(-spline_order, grid_size + spline_order + 1) * h + grid_range[0]
         )
         self.n_basis = grid_size + spline_order
+        self.coeff_scale = jnp.ones(self.n_basis)  # local basis: no degree ordering
 
     def __call__(self, x):
         grid = self.grid
@@ -47,7 +48,7 @@ class BSplineBasis:
 
 
 class ChebyshevBasis:
-    """Chebyshev polynomials T_0..T_degree of the first kind.
+    """Chebyshev polynomials T_0..T_degree.
 
     Args:
         degree: highest polynomial degree, so n_basis = degree + 1.
@@ -63,11 +64,12 @@ class ChebyshevBasis:
             |z| > 1.
     """
 
-    def __init__(self, degree=5, domain=None, scale=1.0):
+    def __init__(self, degree=5, domain=None, scale=1.0, decay=0.0):
         self.degree = degree
         self.domain = domain
         self.scale = scale
         self.n_basis = degree + 1
+        self.coeff_scale = jnp.logspace(0.0, decay, self.n_basis)
 
     def __call__(self, x):
         z = _to_reference(x, domain=self.domain, scale=self.scale)[..., None]

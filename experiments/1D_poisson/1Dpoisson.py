@@ -12,6 +12,7 @@ from src.pinns import MLP, KANN, HardConstraint
 from src.loss import loss_fn
 from src.utils import derivatives, laplacian
 from src.sweep import compare_models
+from src.train import train_adam_lbfgs
 from src.bases import BSplineBasis, ChebyshevBasis
 
 
@@ -53,11 +54,6 @@ def main():
 
     models = {
         "MLP": lambda rngs: MLP([1, 48, 48, 48, 1], act_fun=nnx.silu, rngs=rngs),
-        "KANN_spline_same_width": lambda rngs: KANN(
-            [1, 48, 48, 48, 1],
-            basis_fn=BSplineBasis,
-            rngs=rngs,
-        ),
         "KANN_spline_same_params": lambda rngs: KANN(
             [1, 16, 16, 16, 1],
             basis_fn=BSplineBasis,
@@ -67,6 +63,14 @@ def main():
             [1, 16, 16, 16, 1],
             basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0),
             input_basis_fn=lambda: ChebyshevBasis(degree=5, domain=(X_MIN, X_MAX)),
+            rngs=rngs,
+        ),
+        "KANN_cheb_decay": lambda rngs: KANN(
+            [1, 16, 16, 16, 1],
+            basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0, decay=-2.0),
+            input_basis_fn=lambda: ChebyshevBasis(
+                degree=5, domain=(X_MIN, X_MAX), decay=-2.0
+            ),
             rngs=rngs,
         ),
     }
@@ -88,7 +92,9 @@ def main():
         title="1D Poisson",
         x_label="x",
         y_label="u(x)",
-        steps=5000,
+        train_fn=train_adam_lbfgs,
+        adam_steps=6000,
+        lbfgs_steps=4000,
         lr=1e-3,
     )
 

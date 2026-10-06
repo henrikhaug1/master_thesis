@@ -12,8 +12,9 @@ import flax.nnx as nnx
 from src.pinns import MLP, KANN, HardConstraint
 from src.loss import loss_fn
 from src.utils import derivatives, laplacian
-from src.plotting import plot_solutions, plot_field
+from src.plotting import plot_solution_grid, plot_field
 from src.sweep import compare_models
+from src.train import train_adam_lbfgs
 from src.bases import BSplineBasis, ChebyshevBasis
 
 
@@ -83,12 +84,6 @@ def main():
 
     models = {
         "MLP": lambda rngs: MLP([2, 96, 96, 96, 1], act_fun=nnx.silu, rngs=rngs),
-        "KANN_spline_same_width": lambda rngs: KANN(
-            [2, 96, 96, 96, 1],
-            basis_fn=BSplineBasis,
-            input_basis_fn=lambda: BSplineBasis(grid_range=(X_MIN, X_MAX)),
-            rngs=rngs,
-        ),
         "KANN_spline_same_params": lambda rngs: KANN(
             [2, 32, 32, 32, 1],
             basis_fn=BSplineBasis,
@@ -101,6 +96,16 @@ def main():
             input_basis_fn=lambda: ChebyshevBasis(
                 degree=5,
                 domain=(jnp.array([X_MIN, Y_MIN]), jnp.array([X_MAX, Y_MAX])),
+            ),
+            rngs=rngs,
+        ),
+        "KANN_cheb_decay": lambda rngs: KANN(
+            [2, 32, 32, 32, 1],
+            basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0, decay=-2.0),
+            input_basis_fn=lambda: ChebyshevBasis(
+                degree=5,
+                domain=(jnp.array([X_MIN, Y_MIN]), jnp.array([X_MAX, Y_MAX])),
+                decay=-2.0,
             ),
             rngs=rngs,
         ),
@@ -123,7 +128,9 @@ def main():
         seeds=(0, 1, 2),
         out_dir=OUT_DIR,
         title="2D Poisson",
-        steps=5000,
+        train_fn=train_adam_lbfgs,
+        adam_steps=6000,
+        lbfgs_steps=4000,
         lr=1e-3,
     )
 
@@ -137,9 +144,10 @@ def main():
 
     # Slice through the middle of the domain, u(x, y = 0.5).
     j = len(yg) // 2
-    plot_solutions(
+    plot_solution_grid(
         xg,
-        {"exact": U_exact[:, j], **{n: U[:, j] for n, U in fields.items()}},
+        U_exact[:, j],
+        {n: U[:, j] for n, U in fields.items()},
         "x",
         f"u(x, y = {float(yg[j]):.2f})",
         f"2D Poisson at y = {float(yg[j]):.2f}",

@@ -13,6 +13,7 @@ from src.bases import ChebyshevBasis
 from src.loss import loss_fn
 from src.utils import derivatives
 from src.sweep import compare_models
+from src.train import train_adam_lbfgs
 
 
 m = 1.0
@@ -51,12 +52,19 @@ def main():
     compare_models(
         models={
             "MLP": lambda rngs: MLP([1, 48, 48, 48, 1], act_fun=nnx.silu, rngs=rngs),
-            "KANN_spline_same_width": lambda rngs: KANN([1, 48, 48, 48, 1], rngs=rngs),
             "KANN_spline_same_params": lambda rngs: KANN([1, 16, 16, 16, 1], rngs=rngs),
             "KANN_cheb": lambda rngs: KANN(
                 [1, 16, 16, 16, 1],
                 basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0),
                 input_basis_fn=lambda: ChebyshevBasis(degree=5, domain=(T_MIN, T_MAX)),
+                rngs=rngs,
+            ),
+            "KANN_cheb_decay": lambda rngs: KANN(
+                [1, 16, 16, 16, 1],
+                basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0, decay=-2.0),
+                input_basis_fn=lambda: ChebyshevBasis(
+                    degree=5, domain=(T_MIN, T_MAX), decay=-2.0
+                ),
                 rngs=rngs,
             ),
         },
@@ -69,7 +77,9 @@ def main():
         title="1D Oscillator",
         x_label="t",
         y_label="u(t)",
-        steps=5000,
+        train_fn=train_adam_lbfgs,
+        adam_steps=6000,
+        lbfgs_steps=4000,
         lr=1e-3,
     )
 

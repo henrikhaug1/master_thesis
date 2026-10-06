@@ -12,8 +12,9 @@ import flax.nnx as nnx
 from src.pinns import MLP, KANN, HardConstraint
 from src.loss import loss_fn
 from src.utils import derivatives, laplacian
-from src.plotting import plot_solutions, plot_field
+from src.plotting import plot_solution_grid, plot_field
 from src.sweep import compare_models
+from src.train import train_adam_lbfgs
 from src.bases import BSplineBasis, ChebyshevBasis
 
 
@@ -74,13 +75,6 @@ def main():
 
     models = {
         "MLP": lambda rngs: MLP([2, 96, 96, 96, 1], act_fun=nnx.silu, rngs=rngs),
-        # Same layout as the MLP -- every edge carries n_basis coefficients, so
-        # this costs roughly 9x the MLP's parameters (and trains far slower).
-        "KANN_spline_same_width": lambda rngs: KANN(
-            [2, 96, 96, 96, 1],
-            basis_fn=lambda: BSplineBasis(grid_range=(-0.5, 13.0)),
-            rngs=rngs,
-        ),
         # Width cut until the parameter count matches the MLP instead.
         "KANN_spline_same_params": lambda rngs: KANN(
             [2, 32, 32, 32, 1],
@@ -92,6 +86,14 @@ def main():
             basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0),
             input_basis_fn=lambda: ChebyshevBasis(
                 degree=5, domain=(jnp.zeros(2), jnp.array([L, T]))
+            ),
+            rngs=rngs,
+        ),
+        "KANN_cheb_decay": lambda rngs: KANN(
+            [2, 32, 32, 32, 1],
+            basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0, decay=-2.0),
+            input_basis_fn=lambda: ChebyshevBasis(
+                degree=5, domain=(jnp.zeros(2), jnp.array([L, T])), decay=-2.0
             ),
             rngs=rngs,
         ),
@@ -121,7 +123,9 @@ def main():
         seeds=(0, 1, 2),
         out_dir=OUT_DIR,
         title="1D Wave Equation",
-        steps=5000,
+        train_fn=train_adam_lbfgs,
+        adam_steps=6000,
+        lbfgs_steps=4000,
         lr=1e-3,
     )
 
@@ -135,9 +139,10 @@ def main():
 
     # Snapshots u(x, .) at a few fixed times.
     for j in [0, len(tg) // 4, len(tg) // 2]:
-        plot_solutions(
+        plot_solution_grid(
             xg,
-            {"exact": U_exact[:, j], **{n: U[:, j] for n, U in fields.items()}},
+            U_exact[:, j],
+            {n: U[:, j] for n, U in fields.items()},
             "x",
             "u(x,t)",
             f"1D Wave at t = {float(tg[j]):.2f}",

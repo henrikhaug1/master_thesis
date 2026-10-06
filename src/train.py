@@ -28,13 +28,27 @@ def train(
     patience=5,
     verbose_every=500,
     metric_fn=None,
+    tx=None,
+    name="adam",
 ):
-    optimizer = nnx.Optimizer(model, optax.adam(lr), wrt=nnx.Param)
+    tx = tx if tx is not None else optax.adam(lr)
+    optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
 
     @nnx.jit
     def train_step(model, optimizer):
+        graphdef, params, rest = nnx.split(model, nnx.Param, ...)
+
+        def value_fn(p):
+            return loss(nnx.merge(graphdef, p, rest))
+
         loss_val, grads = nnx.value_and_grad(loss)(model)
-        optimizer.update(model, grads)
+        optimizer.update(
+            model,
+            grads,
+            value=loss_val,
+            grad=nnx.as_pure(nnx.state(grads, nnx.Param)),
+            value_fn=value_fn,
+        )
         return loss_val
 
     loss_history = []
@@ -81,7 +95,7 @@ def train(
             break
 
         if verbose_every and i % verbose_every == 0:
-            print(f"step {i:5d} | loss {l:.6e}")
+            print(f"{name:<5} step {i:5d} | loss {l:.6e}")
 
     if best_params is not None:
         state = nnx.state(model, nnx.Param)
@@ -98,4 +112,31 @@ def train(
         stop_reason=stop_reason,
         metric_history=jnp.asarray(metric_history) if metric_fn else None,
         metric_steps=jnp.asarray(metric_steps) if metric_fn else None,
+    )
+
+
+def train_adam_lbfgs(model, loss, adam_steps=6000, lbfgs_steps=4000, lr=1e-3, **kw):
+    adam = train(model, loss, steps=adam_steps, tx=optax.adam(lr), name="adam", **kw)
+    lbfgs = train(
+        model, loss, steps=lbfgs_steps, tx=optax.lbfgs(), name="lbfgs", **kw
+    )
+
+    offset = adam.n_steps
+    has_metric = adam.metric_history is not None
+    return TrainResult(
+        loss_history=jnp.concatenate([adam.loss_history, lbfgs.loss_history]),
+        train_time=adam.train_time + lbfgs.train_time,
+        best_loss=min(adam.best_loss, lbfgs.best_loss),
+        n_steps=adam.n_steps + lbfgs.n_steps,
+        stop_reason=f"adam: {adam.stop_reason}, lbfgs: {lbfgs.stop_reason}",
+        metric_history=(
+            jnp.concatenate([adam.metric_history, lbfgs.metric_history])
+            if has_metric
+            else None
+        ),
+        metric_steps=(
+            jnp.concatenate([adam.metric_steps, lbfgs.metric_steps + offset])
+            if has_metric
+            else None
+        ),
     )

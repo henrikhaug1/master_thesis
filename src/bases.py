@@ -14,7 +14,7 @@ def _to_reference(x, domain, scale=1.0):
     if domain is None:
         return jnp.tanh(x / scale)
     else:
-        low, high = domain
+        low, high = jnp.asarray(domain[0]), jnp.asarray(domain[1])
         return 2.0 * (x - low) / (high - low) - 1.0
 
 
@@ -26,7 +26,7 @@ class BSplineBasis:
             jnp.arange(-spline_order, grid_size + spline_order + 1) * h + grid_range[0]
         )
         self.n_basis = grid_size + spline_order
-        self.coeff_scale = jnp.ones(self.n_basis)  # local basis: no degree ordering
+        self.coeff_scale = jnp.ones(self.n_basis)
 
     def __call__(self, x):
         grid = self.grid
@@ -52,7 +52,8 @@ class ChebyshevBasis:
 
     Args:
         degree: highest polynomial degree, so n_basis = degree + 1.
-        domain: (low, high) range the inputs are affinely mapped from. Pass the
+        domain: (low, high) range the inputs are affinely mapped from; for
+            several inputs, one bound per input, e.g. ((0, 0), (1, 2)). Pass the
             real range whenever it is known -- i.e. for the input layer, where
             it is the domain of the PDE. Passing None instead squashes the
             inputs with tanh, which saturates: on t in [0, 10] every T_n is

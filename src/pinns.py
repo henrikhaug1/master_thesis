@@ -6,12 +6,20 @@ from src.bases import BSplineBasis
 
 class MLP(nnx.Module):
     def __init__(
-        self, layer_sizes: list, act_fun=nnx.tanh, out_fun=None, *, rngs: nnx.Rngs
+        self,
+        layer_sizes: list,
+        act_fun=nnx.tanh,
+        out_fun=None,
+        *,
+        kernel_init=nnx.initializers.lecun_normal(),
+        rngs: nnx.Rngs,
     ):
         self.act_fun = act_fun
         self.out_fun = out_fun
         self.layers = nnx.List(
-            nnx.Linear(layer_sizes[i], layer_sizes[i + 1], rngs=rngs)
+            nnx.Linear(
+                layer_sizes[i], layer_sizes[i + 1], kernel_init=kernel_init, rngs=rngs
+            )
             for i in range(len(layer_sizes) - 1)
         )
 
@@ -30,6 +38,8 @@ class KANLinear(nnx.Module):
         out_features: int,
         basis=None,
         *,
+        coeff_std: float = 0.1,
+        base_init=nnx.initializers.he_uniform(),
         decay_in_forward: bool = False,
         rngs: nnx.Rngs,
     ):
@@ -37,10 +47,8 @@ class KANLinear(nnx.Module):
         self.decay_in_forward = decay_in_forward
         key1, key2 = jax.random.split(rngs.params())
 
-        self.base_weight = nnx.Param(
-            nnx.initializers.he_uniform()(key1, (in_features, out_features))
-        )
-        coeff = 0.1 * jax.random.normal(
+        self.base_weight = nnx.Param(base_init(key1, (in_features, out_features)))
+        coeff = coeff_std * jax.random.normal(
             key2, (in_features, out_features, self.basis.n_basis)
         )
 
@@ -64,7 +72,9 @@ class KANN(nnx.Module):
         input_basis_fn=None,
         *,
         rngs: nnx.Rngs,
+        **layer_kw,
     ):
+        """`layer_kw` (coeff_std, base_init, decay_in_forward) goes to every KANLinear."""
         input_basis_fn = input_basis_fn or basis_fn
         self.layers = nnx.List(
             KANLinear(
@@ -72,6 +82,7 @@ class KANN(nnx.Module):
                 layer_sizes[i + 1],
                 basis=(input_basis_fn if i == 0 else basis_fn)(),
                 rngs=rngs,
+                **layer_kw,
             )
             for i in range(len(layer_sizes) - 1)
         )

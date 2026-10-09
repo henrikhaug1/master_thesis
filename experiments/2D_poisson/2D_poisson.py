@@ -1,3 +1,6 @@
+"""2D Poisson: -lap u = 2 pi^2 sin(pi x) sin(pi y) on the unit square, u = 0 on
+the boundary. Exact: u = sin(pi x) sin(pi y)."""
+
 import sys
 from pathlib import Path
 
@@ -6,25 +9,52 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import jax.numpy as jnp
-import numpy as np
-import flax.nnx as nnx
 
-from src.pinns import MLP, KANN, HardConstraint
+from src.config import KANNConfig, MLPConfig, Stage, TrainConfig
+from src.experiment import compare_models, median_prediction
 from src.loss import loss_fn
+from src.pinns import HardConstraint
+from src.plotting import plot_fields, plot_solution_grid
 from src.utils import derivatives, laplacian
-from src.plotting import plot_solution_grid, plot_field
-from src.sweep import compare_models
-from src.train import train_adam_lbfgs
-from src.bases import BSplineBasis, ChebyshevBasis
 
-
+OUT_DIR = Path(__file__).parent
+TITLE = "2D Poisson"
 pi = jnp.pi
+
+# ---------- Settings ----------
 X_MIN, X_MAX = 0.0, 1.0
 Y_MIN, Y_MAX = 0.0, 1.0
-OUT_DIR = Path(__file__).parent
-HARD_BC = True
+N_GRID = 64  # collocation grid is N_GRID x N_GRID, also where the error is measured
+N_BC = 100  # points per edge, used only when HARD_BC is False
+HARD_BC = True  # impose u = 0 on the boundary exactly instead of as a loss term
+
+TRAIN = TrainConfig(
+    stages=(Stage("soap", 6000, lr=3e-3), Stage("lbfgs", 4000)),
+    seeds=(0, 1, 2),
+)
+
+CHEB = dict(degree=5, scale=2.0)
+INPUT = dict(domain=((X_MIN, Y_MIN), (X_MAX, Y_MAX)))
+MODELS = {
+    "MLP": MLPConfig((2, 96, 96, 96, 1)),
+    "KANN_spline_same_params": KANNConfig(
+        (2, 32, 32, 32, 1),
+        basis="bspline",
+        input_options=dict(grid_range=(X_MIN, X_MAX)),
+    ),
+    "KANN_cheb": KANNConfig(
+        (2, 32, 32, 32, 1), basis="cheb", basis_options=CHEB, input_options=INPUT
+    ),
+    "KANN_cheb_decay": KANNConfig(
+        (2, 32, 32, 32, 1),
+        basis="cheb",
+        basis_options={**CHEB, "decay": -2.0},
+        input_options=INPUT,
+    ),
+}
 
 
+# ---------- Problem ----------
 def exact_solution(x, y):
     return jnp.sin(pi * x) * jnp.sin(pi * y)
 
@@ -43,7 +73,7 @@ def bc_fn(model, bc_pts):
     return jnp.mean(u**2)
 
 
-def hard_bc(model_fn):
+def hard_bc(net):
     """u = phi(x,y) * N(x,y) with phi = 0 on all four edges, so u = 0 there exactly."""
     lx, ly = X_MAX - X_MIN, Y_MAX - Y_MIN
 
@@ -59,18 +89,18 @@ def hard_bc(model_fn):
             / (lx**2 * ly**2)
         )
 
-    return lambda rngs: HardConstraint(model_fn(rngs), phi=phi)
+    return HardConstraint(net, phi=phi)
 
 
 def main():
-    xg = jnp.linspace(X_MIN, X_MAX, 64)
-    yg = jnp.linspace(Y_MIN, Y_MAX, 64)
+    xg = jnp.linspace(X_MIN, X_MAX, N_GRID)
+    yg = jnp.linspace(Y_MIN, Y_MAX, N_GRID)
     X, Y = jnp.meshgrid(xg, yg, indexing="ij")
-    pts = jnp.stack([X.ravel(), Y.ravel()], axis=-1)  # (4096, 2)
+    pts = jnp.stack([X.ravel(), Y.ravel()], axis=-1)
 
     # The four edges, used only when the BC is imposed softly.
-    xb = jnp.linspace(X_MIN, X_MAX, 100)
-    yb = jnp.linspace(Y_MIN, Y_MAX, 100)
+    xb = jnp.linspace(X_MIN, X_MAX, N_BC)
+    yb = jnp.linspace(Y_MIN, Y_MAX, N_BC)
     bc_pts = jnp.concatenate(
         [
             jnp.stack([xb, jnp.full_like(xb, Y_MIN)], axis=-1),
@@ -80,105 +110,50 @@ def main():
         ]
     )
 
-    U_exact = exact_solution(X, Y)
-
-    models = {
-        "MLP": lambda rngs: MLP([2, 96, 96, 96, 1], act_fun=nnx.silu, rngs=rngs),
-        "KANN_spline_same_params": lambda rngs: KANN(
-            [2, 32, 32, 32, 1],
-            basis_fn=BSplineBasis,
-            input_basis_fn=lambda: BSplineBasis(grid_range=(X_MIN, X_MAX)),
-            rngs=rngs,
-        ),
-        "KANN_cheb": lambda rngs: KANN(
-            [2, 32, 32, 32, 1],
-            basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0),
-            input_basis_fn=lambda: ChebyshevBasis(
-                degree=5,
-                domain=(jnp.array([X_MIN, Y_MIN]), jnp.array([X_MAX, Y_MAX])),
-            ),
-            rngs=rngs,
-        ),
-        "KANN_cheb_decay": lambda rngs: KANN(
-            [2, 32, 32, 32, 1],
-            basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0, decay=-2.0),
-            input_basis_fn=lambda: ChebyshevBasis(
-                degree=5,
-                domain=(jnp.array([X_MIN, Y_MIN]), jnp.array([X_MAX, Y_MAX])),
-                decay=-2.0,
-            ),
-            rngs=rngs,
-        ),
-    }
-
     if HARD_BC:
-        models = {name: hard_bc(fn) for name, fn in models.items()}
         loss = lambda model: loss_fn(model, pts, residual, hard_constraints=True)
     else:
         loss = lambda model: loss_fn(
             model, pts, residual, bc_fn=lambda m: bc_fn(m, bc_pts)
         )
 
-    results = compare_models(
-        models=models,
-        loss=loss,
+    U_exact = exact_solution(X, Y)
+    results, run_dir = compare_models(
+        MODELS,
+        TRAIN,
+        loss,
         predict_fn=lambda model: model(pts)[:, 0],
         u_exact=U_exact.ravel(),
-        x=None,
-        seeds=(0, 1, 2),
         out_dir=OUT_DIR,
-        title="2D Poisson",
-        train_fn=train_adam_lbfgs,
-        adam_steps=6000,
-        lbfgs_steps=4000,
-        lr=1e-3,
+        title=TITLE,
+        problem=dict(
+            domain=((X_MIN, Y_MIN), (X_MAX, Y_MAX)),
+            n_grid=N_GRID,
+            n_bc=N_BC,
+            hard_bc=HARD_BC,
+        ),
+        wrap=hard_bc if HARD_BC else None,
     )
 
     # ---------- Plotting ----------
-    # Median prediction per model, reshaped back onto the (x, y) grid.
     fields = {
-        name: np.median(np.stack([r["u"] for r in runs]), axis=0).reshape(X.shape)
-        for name, runs in results.items()
+        name: median_prediction(runs).reshape(X.shape) for name, runs in results.items()
     }
-    figs = OUT_DIR / "figs"
+    figs = run_dir / "figs"
 
     # Slice through the middle of the domain, u(x, y = 0.5).
-    j = len(yg) // 2
+    j = N_GRID // 2
     plot_solution_grid(
         xg,
         U_exact[:, j],
         {n: U[:, j] for n, U in fields.items()},
         "x",
         f"u(x, y = {float(yg[j]):.2f})",
-        f"2D Poisson at y = {float(yg[j]):.2f}",
-        str(figs / "2D_poisson_slice.pdf"),
+        f"{TITLE} at y = {float(yg[j]):.2f}",
+        str(figs / f"{TITLE.replace(' ', '_')}_slice.pdf"),
     )
 
-    # Full fields and their error against the exact solution.
-    for name, U in [("exact", U_exact), *fields.items()]:
-        plot_field(
-            X,
-            Y,
-            U,
-            "x",
-            "y",
-            f"2D Poisson - {name}",
-            str(figs / f"2D_poisson_field_{name}.pdf"),
-            cbar_label="u(x,y)",
-        )
-
-    for name, U in fields.items():
-        plot_field(
-            X,
-            Y,
-            jnp.abs(U - U_exact),
-            "x",
-            "y",
-            f"2D Poisson - |{name} - exact|",
-            str(figs / f"2D_poisson_error_{name}.pdf"),
-            cmap="magma",
-            cbar_label="abs. error",
-        )
+    plot_fields(X, Y, U_exact, fields, "x", "y", TITLE, figs, cbar_label="u(x,y)")
 
 
 if __name__ == "__main__":

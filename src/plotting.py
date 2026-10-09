@@ -2,23 +2,6 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 
-def plot_solutions(
-    x, dict: dict, x_label: str, y_label: str, title: str, filename: str
-):
-    x = jnp.asarray(x)
-    plt.figure(figsize=(8, 4))
-    for label, y in dict.items():
-        plt.plot(x, jnp.asarray(y), label=label)
-    plt.xlabel(x_label)
-    plt.ylabel(y_label)
-    if title:
-        plt.title(title)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig(filename, dpi=150, bbox_inches="tight")
-    plt.close()
-
-
 def plot_solution_grid(
     x,
     exact,
@@ -105,6 +88,48 @@ def plot_field(
     plt.close()
 
 
+def plot_fields(
+    X,
+    Y,
+    U_exact,
+    fields: dict,
+    x_label: str,
+    y_label: str,
+    title: str,
+    fig_dir,
+    cbar_label: str = "u",
+):
+    """One PDF each for the exact field, every model's field and its absolute error.
+
+    Files are named <title>_field_<name>.pdf and <title>_error_<name>.pdf, with
+    spaces in the title as underscores.
+    """
+    slug = title.replace(" ", "_")
+    for name, U in [("exact", U_exact), *fields.items()]:
+        plot_field(
+            X,
+            Y,
+            U,
+            x_label,
+            y_label,
+            f"{title} - {name}",
+            f"{fig_dir}/{slug}_field_{name}.pdf",
+            cbar_label=cbar_label,
+        )
+    for name, U in fields.items():
+        plot_field(
+            X,
+            Y,
+            jnp.abs(U - U_exact),
+            x_label,
+            y_label,
+            f"{title} - |{name} - exact|",
+            f"{fig_dir}/{slug}_error_{name}.pdf",
+            cmap="magma",
+            cbar_label="abs. error",
+        )
+
+
 def plot_loss_bands(
     histories: dict,
     filename: str,
@@ -112,6 +137,7 @@ def plot_loss_bands(
     band: str = "iqr",
     steps=None,
     y_label: str = "loss",
+    references: dict | None = None,
 ):
     """
     Loss curves over several seeds, drawn as a central line with a spread band.
@@ -119,6 +145,9 @@ def plot_loss_bands(
     Histories that stopped early are NaN-padded to a common length, so every
     reduction here is nan-aware: past the first stop the band is taken over the
     seeds still running, and it ends where the last one stopped.
+
+    `references` maps a label to a constant value drawn as a dashed horizontal
+    line, for methods without a training history such as an FEM solution.
     """
     plt.figure(figsize=(8, 4))
     for label, hist in histories.items():
@@ -136,22 +165,10 @@ def plot_loss_bands(
         (line,) = plt.plot(x, mid, label=label)
         if h.shape[0] > 1:
             plt.fill_between(x, low, high, alpha=0.25, color=line.get_color())
+    for label, value in (references or {}).items():
+        plt.axhline(value, linestyle="--", linewidth=1.2, color="black", label=label)
     plt.xlabel("step")
     plt.ylabel(y_label)
-    plt.yscale("log")
-    plt.title(title)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig(filename, dpi=150, bbox_inches="tight")
-    plt.close()
-
-
-def plot_losses(histories: dict, filename: str, title: str = "Training loss"):
-    plt.figure(figsize=(8, 4))
-    for label, hist in histories.items():
-        plt.plot(jnp.asarray(hist), label=label)
-    plt.xlabel("step")
-    plt.ylabel("loss")
     plt.yscale("log")
     plt.title(title)
     plt.legend()

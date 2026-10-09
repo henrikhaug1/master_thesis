@@ -1,3 +1,6 @@
+"""1D wave equation: u_tt = c^2 u_xx on [0, L] x [0, T], u = 0 at x = 0, L,
+u(x, 0) = sin(kx), u_t(x, 0) = 0. Exact: u = sin(kx) cos(ckt)."""
+
 import sys
 from pathlib import Path
 
@@ -6,35 +9,63 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import jax.numpy as jnp
-import numpy as np
-import flax.nnx as nnx
 
-from src.pinns import MLP, KANN, HardConstraint
+from src.config import KANNConfig, MLPConfig, Stage, TrainConfig
+from src.experiment import compare_models, median_prediction
 from src.loss import loss_fn
-from src.utils import derivatives, laplacian
-from src.plotting import plot_solution_grid, plot_field
-from src.sweep import compare_models
-from src.train import train_adam_lbfgs
-from src.bases import BSplineBasis, ChebyshevBasis
-
-
-c = 1.0
-L = 2 * jnp.pi
-k = jnp.pi / L
-T = 2 * L / c  # one full period of cos(c k t)
+from src.pinns import HardConstraint
+from src.plotting import plot_fields, plot_solution_grid
+from src.utils import derivatives
 
 OUT_DIR = Path(__file__).parent
+TITLE = "1D Wave Equation"
 
-HARD_BC = True
+# ---------- Settings ----------
+C = 1.0  # wave speed
+L = 2 * jnp.pi
+K = jnp.pi / L  # wave number of the initial condition
+T = 2 * L / C  # one full period of cos(c k t)
+N_GRID = 60  # collocation grid is N_GRID x N_GRID, also where the error is measured
+N_IC = 100  # points on t = 0
+N_BC = 100  # points on each of x = 0 and x = L, used only when HARD_BC is False
+HARD_BC = True  # impose u = 0 at x = 0, L exactly instead of as a loss term
+W_BC = 2.0  # weight of the boundary loss when HARD_BC is False
+
+TRAIN = TrainConfig(
+    stages=(Stage("soap", 6000, lr=3e-3), Stage("lbfgs", 4000)),
+    seeds=(0, 1, 2),
+)
+
+CHEB = dict(degree=5, scale=2.0)
+INPUT = dict(domain=((0.0, 0.0), (L, T)))
+MODELS = {
+    "MLP": MLPConfig((2, 96, 96, 96, 1)),
+    # Width cut until the parameter count matches the MLP instead.
+    "KANN_spline_same_params": KANNConfig(
+        (2, 32, 32, 32, 1),
+        basis="bspline",
+        basis_options=dict(grid_range=(-0.5, 13.0)),
+    ),
+    "KANN_cheb": KANNConfig(
+        (2, 32, 32, 32, 1), basis="cheb", basis_options=CHEB, input_options=INPUT
+    ),
+    "KANN_cheb_decay": KANNConfig(
+        (2, 32, 32, 32, 1),
+        basis="cheb",
+        basis_options={**CHEB, "decay": -2.0},
+        input_options=INPUT,
+    ),
+}
 
 
+# ---------- Problem ----------
 def exact_solution(x, t):
-    return jnp.sin(k * x) * jnp.cos(c * k * t)
+    return jnp.sin(K * x) * jnp.cos(C * K * t)
 
 
 def residual(model, pts):
     u, g, H = derivatives(model, pts, order=2)
-    return H[:, 1, 1] - (c**2 * H[:, 0, 0])
+    return H[:, 1, 1] - (C**2 * H[:, 0, 0])
 
 
 def bc_fn(model, bc_pts):
@@ -44,26 +75,24 @@ def bc_fn(model, bc_pts):
 
 def ic_fn(model, ic_pts):
     u, g = derivatives(model, ic_pts, order=1)
-    return jnp.mean((u - jnp.sin(k * ic_pts[:, 0])) ** 2) + jnp.mean(g[:, 1] ** 2)
+    return jnp.mean((u - jnp.sin(K * ic_pts[:, 0])) ** 2) + jnp.mean(g[:, 1] ** 2)
 
 
-def hard_bc(model_fn):
+def hard_bc(net):
     """u = 4x(L-x)/L^2 * N(x,t), so u(0,t) = u(L,t) = 0 exactly."""
-    return lambda rngs: HardConstraint(
-        model_fn(rngs), phi=lambda xt: 4.0 * xt[:, :1] * (L - xt[:, :1]) / L**2
-    )
+    return HardConstraint(net, phi=lambda xt: 4.0 * xt[:, :1] * (L - xt[:, :1]) / L**2)
 
 
 def main():
-    xg = jnp.linspace(0, L, 60)
-    tg = jnp.linspace(0, T, 60)
+    xg = jnp.linspace(0, L, N_GRID)
+    tg = jnp.linspace(0, T, N_GRID)
     X, T_grid = jnp.meshgrid(xg, tg, indexing="ij")
     pts = jnp.stack([X.ravel(), T_grid.ravel()], axis=-1)
 
-    x_ic = jnp.linspace(0, L, 100)  # bottom edge t = 0
+    x_ic = jnp.linspace(0, L, N_IC)  # bottom edge t = 0
     ic_pts = jnp.stack([x_ic, jnp.zeros_like(x_ic)], axis=-1)
 
-    t_bc = jnp.linspace(0, T, 100)  # side edges x = 0, L
+    t_bc = jnp.linspace(0, T, N_BC)  # side edges x = 0, L
     bc_pts = jnp.concatenate(
         [
             jnp.stack([jnp.zeros_like(t_bc), t_bc], axis=-1),
@@ -71,36 +100,7 @@ def main():
         ]
     )
 
-    U_exact = exact_solution(X, T_grid)
-
-    models = {
-        "MLP": lambda rngs: MLP([2, 96, 96, 96, 1], act_fun=nnx.silu, rngs=rngs),
-        # Width cut until the parameter count matches the MLP instead.
-        "KANN_spline_same_params": lambda rngs: KANN(
-            [2, 32, 32, 32, 1],
-            basis_fn=lambda: BSplineBasis(grid_range=(-0.5, 13.0)),
-            rngs=rngs,
-        ),
-        "KANN_cheb": lambda rngs: KANN(
-            [2, 32, 32, 32, 1],
-            basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0),
-            input_basis_fn=lambda: ChebyshevBasis(
-                degree=5, domain=(jnp.zeros(2), jnp.array([L, T]))
-            ),
-            rngs=rngs,
-        ),
-        "KANN_cheb_decay": lambda rngs: KANN(
-            [2, 32, 32, 32, 1],
-            basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0, decay=-2.0),
-            input_basis_fn=lambda: ChebyshevBasis(
-                degree=5, domain=(jnp.zeros(2), jnp.array([L, T])), decay=-2.0
-            ),
-            rngs=rngs,
-        ),
-    }
-
     if HARD_BC:
-        models = {name: hard_bc(fn) for name, fn in models.items()}
         loss = lambda model: loss_fn(
             model, pts, residual=residual, ic_fn=lambda m: ic_fn(m, ic_pts)
         )
@@ -111,69 +111,50 @@ def main():
             residual=residual,
             ic_fn=lambda m: ic_fn(m, ic_pts),
             bc_fn=lambda m: bc_fn(m, bc_pts),
-            w_bc=2.0,
+            w_bc=W_BC,
         )
 
-    results = compare_models(
-        models=models,
-        loss=loss,
+    U_exact = exact_solution(X, T_grid)
+    results, run_dir = compare_models(
+        MODELS,
+        TRAIN,
+        loss,
         predict_fn=lambda model: model(pts)[:, 0],
         u_exact=U_exact.ravel(),
-        x=None,
-        seeds=(0, 1, 2),
         out_dir=OUT_DIR,
-        title="1D Wave Equation",
-        train_fn=train_adam_lbfgs,
-        adam_steps=6000,
-        lbfgs_steps=4000,
-        lr=1e-3,
+        title=TITLE,
+        problem=dict(
+            c=C,
+            L=L,
+            T=T,
+            n_grid=N_GRID,
+            n_ic=N_IC,
+            n_bc=N_BC,
+            hard_bc=HARD_BC,
+            w_bc=W_BC,
+        ),
+        wrap=hard_bc if HARD_BC else None,
     )
 
     # ---------- Plotting ----------
-    # Median prediction per model, reshaped back onto the (x, t) grid.
     fields = {
-        name: np.median(np.stack([r["u"] for r in runs]), axis=0).reshape(X.shape)
-        for name, runs in results.items()
+        name: median_prediction(runs).reshape(X.shape) for name, runs in results.items()
     }
-    figs = OUT_DIR / "figs"
+    figs = run_dir / "figs"
 
     # Snapshots u(x, .) at a few fixed times.
-    for j in [0, len(tg) // 4, len(tg) // 2]:
+    for j in (0, N_GRID // 4, N_GRID // 2):
         plot_solution_grid(
             xg,
             U_exact[:, j],
             {n: U[:, j] for n, U in fields.items()},
             "x",
             "u(x,t)",
-            f"1D Wave at t = {float(tg[j]):.2f}",
-            str(figs / f"1D_wave_snapshot_t{j}.pdf"),
+            f"{TITLE} at t = {float(tg[j]):.2f}",
+            str(figs / f"{TITLE.replace(' ', '_')}_snapshot_t{j}.pdf"),
         )
 
-    # Full space-time fields and their error against the exact solution.
-    for name, U in [("exact", U_exact), *fields.items()]:
-        plot_field(
-            X,
-            T_grid,
-            U,
-            "x",
-            "t",
-            f"1D Wave - {name}",
-            str(figs / f"1D_wave_field_{name}.pdf"),
-            cbar_label="u(x,t)",
-        )
-
-    for name, U in fields.items():
-        plot_field(
-            X,
-            T_grid,
-            jnp.abs(U - U_exact),
-            "x",
-            "t",
-            f"1D Wave - |{name} - exact|",
-            str(figs / f"1D_wave_error_{name}.pdf"),
-            cmap="magma",
-            cbar_label="abs. error",
-        )
+    plot_fields(X, T_grid, U_exact, fields, "x", "t", TITLE, figs, cbar_label="u(x,t)")
 
 
 if __name__ == "__main__":

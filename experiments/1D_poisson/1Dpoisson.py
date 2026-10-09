@@ -1,3 +1,5 @@
+"""1D Poisson: -u'' = pi^2 sin(pi x) on [0, 1], u(0) = u(1) = 0. Exact: u = sin(pi x)."""
+
 import sys
 from pathlib import Path
 
@@ -6,22 +8,45 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import jax.numpy as jnp
-import flax.nnx as nnx
 
-from src.pinns import MLP, KANN, HardConstraint
+from src.config import KANNConfig, MLPConfig, Stage, TrainConfig
+from src.experiment import compare_models
 from src.loss import loss_fn
+from src.pinns import HardConstraint
 from src.utils import derivatives, laplacian
-from src.sweep import compare_models
-from src.train import train_adam_lbfgs
-from src.bases import BSplineBasis, ChebyshevBasis
 
-
-pi = jnp.pi
-X_MIN, X_MAX = 0.0, 1.0
 OUT_DIR = Path(__file__).parent
-HARD_BC = True
+TITLE = "1D Poisson"
+pi = jnp.pi
+
+# ---------- Settings ----------
+X_MIN, X_MAX = 0.0, 1.0
+N_POINTS = 200  # collocation points, also where the error is measured
+HARD_BC = True  # impose u(0) = u(1) = 0 exactly instead of as a loss term
+
+TRAIN = TrainConfig(
+    stages=(Stage("soap", 6000, lr=3e-3), Stage("lbfgs", 4000)),
+    seeds=(0, 1, 2),
+)
+
+CHEB = dict(degree=5, scale=2.0)
+INPUT = dict(domain=(X_MIN, X_MAX))
+MODELS = {
+    "MLP": MLPConfig((1, 48, 48, 48, 1)),
+    "KANN_spline_same_params": KANNConfig((1, 16, 16, 16, 1), basis="bspline"),
+    "KANN_cheb": KANNConfig(
+        (1, 16, 16, 16, 1), basis="cheb", basis_options=CHEB, input_options=INPUT
+    ),
+    "KANN_cheb_decay": KANNConfig(
+        (1, 16, 16, 16, 1),
+        basis="cheb",
+        basis_options={**CHEB, "decay": -2.0},
+        input_options=INPUT,
+    ),
+}
 
 
+# ---------- Problem ----------
 def exact_solution(x):
     return jnp.sin(pi * x)
 
@@ -35,67 +60,38 @@ def residual(model, pts):
     return -laplacian(H) - f(pts[:, 0])
 
 
-def bc_fn(model, bc_pts=jnp.array([[0.0], [1.0]])):
+def bc_fn(model, bc_pts=jnp.array([[X_MIN], [X_MAX]])):
     u = model(bc_pts)[:, 0]
     return jnp.mean(u**2)
 
 
-def hard_bc(model_fn):
+def hard_bc(net):
     """u = 4x(1-x) * N(x), so u(0) = u(1) = 0 exactly."""
-    return lambda rngs: HardConstraint(
-        model_fn(rngs), phi=lambda x: 4.0 * x * (1.0 - x)
-    )
+    return HardConstraint(net, phi=lambda x: 4.0 * x * (1.0 - x))
 
 
 def main():
-    x = jnp.linspace(X_MIN, X_MAX, 200)
+    x = jnp.linspace(X_MIN, X_MAX, N_POINTS)
     pts = x[:, None]
-    analytical_solution = exact_solution(x)
-
-    models = {
-        "MLP": lambda rngs: MLP([1, 48, 48, 48, 1], act_fun=nnx.silu, rngs=rngs),
-        "KANN_spline_same_params": lambda rngs: KANN(
-            [1, 16, 16, 16, 1],
-            basis_fn=BSplineBasis,
-            rngs=rngs,
-        ),
-        "KANN_cheb": lambda rngs: KANN(
-            [1, 16, 16, 16, 1],
-            basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0),
-            input_basis_fn=lambda: ChebyshevBasis(degree=5, domain=(X_MIN, X_MAX)),
-            rngs=rngs,
-        ),
-        "KANN_cheb_decay": lambda rngs: KANN(
-            [1, 16, 16, 16, 1],
-            basis_fn=lambda: ChebyshevBasis(degree=5, scale=2.0, decay=-2.0),
-            input_basis_fn=lambda: ChebyshevBasis(
-                degree=5, domain=(X_MIN, X_MAX), decay=-2.0
-            ),
-            rngs=rngs,
-        ),
-    }
 
     if HARD_BC:
-        models = {name: hard_bc(fn) for name, fn in models.items()}
         loss = lambda model: loss_fn(model, pts, residual, hard_constraints=True)
     else:
         loss = lambda model: loss_fn(model, pts, residual, bc_fn=bc_fn)
 
     compare_models(
-        models=models,
-        loss=loss,
-        predict_fn=lambda model: model(x[:, None])[:, 0],
-        u_exact=analytical_solution,
-        x=x,
-        seeds=(0, 1, 2),
+        MODELS,
+        TRAIN,
+        loss,
+        predict_fn=lambda model: model(pts)[:, 0],
+        u_exact=exact_solution(x),
         out_dir=OUT_DIR,
-        title="1D Poisson",
+        title=TITLE,
+        problem=dict(domain=(X_MIN, X_MAX), n_points=N_POINTS, hard_bc=HARD_BC),
+        wrap=hard_bc if HARD_BC else None,
+        x=x,
         x_label="x",
         y_label="u(x)",
-        train_fn=train_adam_lbfgs,
-        adam_steps=6000,
-        lbfgs_steps=4000,
-        lr=1e-3,
     )
 
 

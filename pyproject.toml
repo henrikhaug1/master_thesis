@@ -9,6 +9,10 @@ dependencies = [
     "jax>=0.4",
     "matplotlib>=3.11.1",
     "optax>=0.2",
+    "soap-jax",
 ]
 [tool.ruff.lint.per-file-ignores]
 "experiments/**" = ["E402"]
+
+[tool.uv.sources]
+soap-jax = { git = "https://github.com/haydn-jones/SOAP_JAX" }

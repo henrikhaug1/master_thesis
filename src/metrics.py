@@ -4,10 +4,6 @@ import flax.nnx as nnx
 from jax import Array
 
 
-def l2_error(u_pred: Array, u_exact: Array) -> float:
-    return float(jnp.sqrt(jnp.mean((u_pred - u_exact) ** 2)))
-
-
 def rel_l2_error(u_pred: Array, u_exact: Array) -> float:
     return float(jnp.linalg.norm(u_pred - u_exact) / jnp.linalg.norm(u_exact))
 

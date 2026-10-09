@@ -1,37 +1,84 @@
+"""Training: a run is a sequence of optimizer stages (see src.config.Stage)."""
+
+import time
+from dataclasses import dataclass
+
 import flax.nnx as nnx
 import jax.numpy as jnp
-import time
 import optax
+from soap_jax import soap
 
-from dataclasses import dataclass
+from src.config import Stage, TrainConfig
+
+# Each entry is called with Stage.lr as `learning_rate` plus Stage.options.
+OPTIMIZERS = {
+    "adam": optax.adam,
+    "adamw": optax.adamw,
+    "sgd": optax.sgd,
+    "soap": soap,
+    "lbfgs": optax.lbfgs,
+}
 
 
 @dataclass
 class TrainResult:
-    loss_history: jnp.ndarray
-    train_time: float
+    loss_history: jnp.ndarray  # one entry per step, all stages back to back
+    metric_history: jnp.ndarray  # metric_fn at metric_steps; empty without one
+    metric_steps: jnp.ndarray
     best_loss: float
-    n_steps: int
-    stop_reason: str
-    metric_history: jnp.ndarray | None = None
-    metric_steps: jnp.ndarray | None = None
+    train_time: float
+    stage_ends: tuple[int, ...]  # cumulative step at which each stage stopped
+    stop_reasons: tuple[str, ...]  # per stage: "max_steps", "converged" or "diverged"
 
 
-def train(
-    model,
-    loss,
-    steps=5000,
-    lr=1e-3,
-    restore_best=True,
-    check_every=100,
-    rel_tol=1e-6,
-    patience=5,
-    verbose_every=500,
-    metric_fn=None,
-    tx=None,
-    name="adam",
-):
-    tx = tx if tx is not None else optax.adam(lr)
+def make_optimizer(stage: Stage) -> optax.GradientTransformationExtraArgs:
+    if stage.optimizer not in OPTIMIZERS:
+        raise ValueError(
+            f"unknown optimizer {stage.optimizer!r}; choose from {list(OPTIMIZERS)}"
+        )
+    kwargs = dict(stage.options)
+    if stage.lr is not None:
+        kwargs["learning_rate"] = stage.lr
+    # The train step passes value/grad/value_fn, which only L-BFGS uses; this
+    # lets every other optimizer ignore them.
+    return optax.with_extra_args_support(OPTIMIZERS[stage.optimizer](**kwargs))
+
+
+def train(model, loss, cfg: TrainConfig, metric_fn=None) -> TrainResult:
+    """Train `model` in place on `loss`, running `cfg.stages` in order.
+
+    `metric_fn(model)`, typically the error against the exact solution, is
+    recorded at every check without affecting training.
+    """
+    optimizers = [make_optimizer(s) for s in cfg.stages]  # catch typos up front
+    log = {"loss": [], "metric": [], "metric_steps": []}
+    best_losses, stage_ends, stop_reasons = [], [], []
+
+    start = time.perf_counter()
+    for stage, tx in zip(cfg.stages, optimizers, strict=True):
+        best_loss, stop_reason = _train_stage(
+            model, loss, stage, tx, cfg, metric_fn, log
+        )
+        best_losses.append(best_loss)
+        stage_ends.append(len(log["loss"]))
+        stop_reasons.append(stop_reason)
+
+    return TrainResult(
+        loss_history=jnp.asarray(log["loss"]),
+        metric_history=jnp.asarray(log["metric"]),
+        metric_steps=jnp.asarray(log["metric_steps"], dtype=int),
+        best_loss=min(best_losses),
+        train_time=time.perf_counter() - start,
+        stage_ends=tuple(stage_ends),
+        stop_reasons=tuple(stop_reasons),
+    )
+
+
+def _train_stage(model, loss, stage, tx, cfg, metric_fn, log):
+    """Up to `stage.steps` steps of one optimizer, appending to `log`.
+
+    Returns (best checked loss, stop reason).
+    """
     optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
 
     @nnx.jit
@@ -51,29 +98,25 @@ def train(
         )
         return loss_val
 
-    loss_history = []
-    metric_history, metric_steps = [], []
+    offset = len(log["loss"])
     best_loss, best_params = float("inf"), None
+    ref, stagnant, stop_reason = float("inf"), 0, "max_steps"
 
-    start = time.perf_counter()
+    for i in range(stage.steps):
+        checking = i % cfg.check_every == 0
+        if checking:
+            # Snapshot before the step: the loss it returns belongs to these.
+            params = (
+                nnx.to_pure_dict(nnx.state(model, nnx.Param))
+                if cfg.restore_best
+                else None
+            )
+            if metric_fn is not None:
+                log["metric_steps"].append(offset + i)
+                log["metric"].append(float(metric_fn(model)))
 
-    stagnant = 0
-    stop_reason = "max_steps"
-    ref = float("inf")
-
-    for i in range(steps):
-        checking = i % check_every == 0
-        params = (
-            nnx.to_pure_dict(nnx.state(model, nnx.Param))
-            if restore_best and checking
-            else None
-        )
-        if checking and metric_fn is not None:
-            metric_steps.append(i)
-            metric_history.append(float(metric_fn(model)))
         loss_val = train_step(model, optimizer)
-        loss_history.append(loss_val)
-
+        log["loss"].append(loss_val)
         if not checking:
             continue
 
@@ -82,61 +125,21 @@ def train(
             break
 
         l = float(loss_val)
-
         if l < best_loss:
-            best_loss = l
-            if restore_best:
-                best_params = params
+            best_loss, best_params = l, params
 
-        stagnant = 0 if best_loss < ref * (1 - rel_tol) else stagnant + 1
+        stagnant = 0 if best_loss < ref * (1 - cfg.rel_tol) else stagnant + 1
         ref = best_loss
-        if stagnant >= patience:
+        if stagnant >= cfg.patience:
             stop_reason = "converged"
             break
 
-        if verbose_every and i % verbose_every == 0:
-            print(f"{name:<5} step {i:5d} | loss {l:.6e}")
+        if cfg.verbose_every and i % cfg.verbose_every == 0:
+            print(f"{stage.optimizer:<5} step {i:5d} | loss {l:.6e}")
 
     if best_params is not None:
         state = nnx.state(model, nnx.Param)
-        nnx.replace_by_pure_dict(state, best_params)  # mutates in place
+        nnx.replace_by_pure_dict(state, best_params)
         nnx.update(model, state)
 
-    train_time = time.perf_counter() - start
-
-    return TrainResult(
-        loss_history=jnp.asarray(loss_history),
-        train_time=train_time,
-        best_loss=best_loss,
-        n_steps=len(loss_history),
-        stop_reason=stop_reason,
-        metric_history=jnp.asarray(metric_history) if metric_fn else None,
-        metric_steps=jnp.asarray(metric_steps) if metric_fn else None,
-    )
-
-
-def train_adam_lbfgs(model, loss, adam_steps=6000, lbfgs_steps=4000, lr=1e-3, **kw):
-    adam = train(model, loss, steps=adam_steps, tx=optax.adam(lr), name="adam", **kw)
-    lbfgs = train(
-        model, loss, steps=lbfgs_steps, tx=optax.lbfgs(), name="lbfgs", **kw
-    )
-
-    offset = adam.n_steps
-    has_metric = adam.metric_history is not None
-    return TrainResult(
-        loss_history=jnp.concatenate([adam.loss_history, lbfgs.loss_history]),
-        train_time=adam.train_time + lbfgs.train_time,
-        best_loss=min(adam.best_loss, lbfgs.best_loss),
-        n_steps=adam.n_steps + lbfgs.n_steps,
-        stop_reason=f"adam: {adam.stop_reason}, lbfgs: {lbfgs.stop_reason}",
-        metric_history=(
-            jnp.concatenate([adam.metric_history, lbfgs.metric_history])
-            if has_metric
-            else None
-        ),
-        metric_steps=(
-            jnp.concatenate([adam.metric_steps, lbfgs.metric_steps + offset])
-            if has_metric
-            else None
-        ),
-    )
+    return best_loss, stop_reason

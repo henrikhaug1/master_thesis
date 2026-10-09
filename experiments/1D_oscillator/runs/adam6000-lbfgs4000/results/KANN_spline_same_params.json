@@ -1,0 +1,121 @@
+{
+  "settings": {
+    "model": {
+      "type": "KANNConfig",
+      "widths": [
+        1,
+        16,
+        16,
+        16,
+        1
+      ],
+      "basis": "bspline",
+      "basis_options": {},
+      "input_options": {},
+      "coeff_std": 0.1,
+      "base_init": "he_uniform",
+      "decay_in_forward": false
+    },
+    "train": {
+      "stages": [
+        {
+          "optimizer": "adam",
+          "steps": 6000,
+          "lr": 0.001,
+          "options": {}
+        },
+        {
+          "optimizer": "lbfgs",
+          "steps": 4000,
+          "lr": null,
+          "options": {}
+        }
+      ],
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "check_every": 100,
+      "rel_tol": 1e-06,
+      "patience": 5,
+      "restore_best": true,
+      "verbose_every": 500
+    },
+    "problem": {
+      "m": 1.0,
+      "mu": 0.4,
+      "k": 4.0,
+      "domain": [
+        0.0,
+        10.0
+      ],
+      "n_points": 200
+    },
+    "wrap": null
+  },
+  "runs": [
+    {
+      "seed": 0,
+      "n_params": 4896,
+      "rel_l2": 0.09787659347057343,
+      "max_err": 0.0859619751572609,
+      "best_loss": 4.22506891482044e-05,
+      "n_steps": 10000,
+      "train_time": 232.67225308297202,
+      "stage_ends": [
+        6000,
+        10000
+      ],
+      "stop_reasons": [
+        "max_steps",
+        "max_steps"
+      ]
+    },
+    {
+      "seed": 1,
+      "n_params": 4896,
+      "rel_l2": 0.09783509373664856,
+      "max_err": 0.08620641380548477,
+      "best_loss": 9.679673530627042e-05,
+      "n_steps": 10000,
+      "train_time": 290.01645408396143,
+      "stage_ends": [
+        6000,
+        10000
+      ],
+      "stop_reasons": [
+        "max_steps",
+        "max_steps"
+      ]
+    },
+    {
+      "seed": 2,
+      "n_params": 4896,
+      "rel_l2": 0.09785177558660507,
+      "max_err": 0.0860784724354744,
+      "best_loss": 2.239417881355621e-05,
+      "n_steps": 9901,
+      "train_time": 267.68469137494685,
+      "stage_ends": [
+        6000,
+        9901
+      ],
+      "stop_reasons": [
+        "max_steps",
+        "converged"
+      ]
+    }
+  ],
+  "created": "2026-10-07T14:55:48",
+  "git": {
+    "commit": "0bd98e87be1ac4cff9ad6ccdce2d75c36845b24f",
+    "dirty": true
+  },
+  "versions": {
+    "jax": "0.11.1",
+    "flax": "0.12.9",
+    "optax": "0.2.8",
+    "soap-jax": "0.2.2"
+  }
+}

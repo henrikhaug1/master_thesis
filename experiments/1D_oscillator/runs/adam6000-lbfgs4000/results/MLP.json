@@ -1,0 +1,117 @@
+{
+  "settings": {
+    "model": {
+      "type": "MLPConfig",
+      "widths": [
+        1,
+        48,
+        48,
+        48,
+        1
+      ],
+      "activation": "silu",
+      "init": "lecun_normal"
+    },
+    "train": {
+      "stages": [
+        {
+          "optimizer": "adam",
+          "steps": 6000,
+          "lr": 0.001,
+          "options": {}
+        },
+        {
+          "optimizer": "lbfgs",
+          "steps": 4000,
+          "lr": null,
+          "options": {}
+        }
+      ],
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "check_every": 100,
+      "rel_tol": 1e-06,
+      "patience": 5,
+      "restore_best": true,
+      "verbose_every": 500
+    },
+    "problem": {
+      "m": 1.0,
+      "mu": 0.4,
+      "k": 4.0,
+      "domain": [
+        0.0,
+        10.0
+      ],
+      "n_points": 200
+    },
+    "wrap": null
+  },
+  "runs": [
+    {
+      "seed": 0,
+      "n_params": 4849,
+      "rel_l2": 0.10105318576097488,
+      "max_err": 0.08624986559152603,
+      "best_loss": 0.0002619398001115769,
+      "n_steps": 10000,
+      "train_time": 22.07250099995872,
+      "stage_ends": [
+        6000,
+        10000
+      ],
+      "stop_reasons": [
+        "max_steps",
+        "max_steps"
+      ]
+    },
+    {
+      "seed": 1,
+      "n_params": 4849,
+      "rel_l2": 0.10592838376760483,
+      "max_err": 0.08724886924028397,
+      "best_loss": 0.0008490241598337889,
+      "n_steps": 10000,
+      "train_time": 14.91600170795573,
+      "stage_ends": [
+        6000,
+        10000
+      ],
+      "stop_reasons": [
+        "max_steps",
+        "max_steps"
+      ]
+    },
+    {
+      "seed": 2,
+      "n_params": 4849,
+      "rel_l2": 0.10047713667154312,
+      "max_err": 0.086624376475811,
+      "best_loss": 0.00017021331586875021,
+      "n_steps": 10000,
+      "train_time": 39.29477183398558,
+      "stage_ends": [
+        6000,
+        10000
+      ],
+      "stop_reasons": [
+        "max_steps",
+        "max_steps"
+      ]
+    }
+  ],
+  "created": "2026-10-07T14:42:36",
+  "git": {
+    "commit": "0bd98e87be1ac4cff9ad6ccdce2d75c36845b24f",
+    "dirty": true
+  },
+  "versions": {
+    "jax": "0.11.1",
+    "flax": "0.12.9",
+    "optax": "0.2.8",
+    "soap-jax": "0.2.2"
+  }
+}

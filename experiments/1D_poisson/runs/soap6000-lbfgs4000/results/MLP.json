@@ -1,0 +1,115 @@
+{
+  "settings": {
+    "model": {
+      "type": "MLPConfig",
+      "widths": [
+        1,
+        48,
+        48,
+        48,
+        1
+      ],
+      "activation": "silu",
+      "init": "lecun_normal"
+    },
+    "train": {
+      "stages": [
+        {
+          "optimizer": "soap",
+          "steps": 6000,
+          "lr": 0.003,
+          "options": {}
+        },
+        {
+          "optimizer": "lbfgs",
+          "steps": 4000,
+          "lr": null,
+          "options": {}
+        }
+      ],
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "check_every": 100,
+      "rel_tol": 1e-06,
+      "patience": 5,
+      "restore_best": true,
+      "verbose_every": 500
+    },
+    "problem": {
+      "domain": [
+        0.0,
+        1.0
+      ],
+      "n_points": 200,
+      "hard_bc": true
+    },
+    "wrap": "hard_bc"
+  },
+  "runs": [
+    {
+      "seed": 0,
+      "n_params": 4849,
+      "rel_l2": 3.6411967130334233e-07,
+      "max_err": 5.364418029785156e-07,
+      "best_loss": 1.8672903223659887e-08,
+      "n_steps": 2002,
+      "train_time": 12.521317167032976,
+      "stage_ends": [
+        1201,
+        2002
+      ],
+      "stop_reasons": [
+        "converged",
+        "converged"
+      ]
+    },
+    {
+      "seed": 1,
+      "n_params": 4849,
+      "rel_l2": 2.570694050518796e-06,
+      "max_err": 3.337860107421875e-06,
+      "best_loss": 4.898000725006568e-07,
+      "n_steps": 1802,
+      "train_time": 12.80053833295824,
+      "stage_ends": [
+        901,
+        1802
+      ],
+      "stop_reasons": [
+        "converged",
+        "converged"
+      ]
+    },
+    {
+      "seed": 2,
+      "n_params": 4849,
+      "rel_l2": 2.606387852210901e-07,
+      "max_err": 4.172325134277344e-07,
+      "best_loss": 1.0339527456437736e-08,
+      "n_steps": 1802,
+      "train_time": 10.056504749984015,
+      "stage_ends": [
+        1201,
+        1802
+      ],
+      "stop_reasons": [
+        "converged",
+        "converged"
+      ]
+    }
+  ],
+  "created": "2026-10-06T16:43:44",
+  "git": {
+    "commit": "0bd98e87be1ac4cff9ad6ccdce2d75c36845b24f",
+    "dirty": true
+  },
+  "versions": {
+    "jax": "0.11.1",
+    "flax": "0.12.9",
+    "optax": "0.2.8",
+    "soap-jax": "0.2.2"
+  }
+}

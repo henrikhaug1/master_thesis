@@ -1,0 +1,101 @@
+[
+  {
+    "name": "MLP",
+    "seed": 0,
+    "n_params": 4849,
+    "rel_l2": 4.1351209802087396e-05,
+    "max_err": 6.276369094848633e-05,
+    "best_loss": 3.0220679036574438e-05,
+    "n_steps": 5000,
+    "train_time": 3.0185266660992056,
+    "stop_reason": "max_steps"
+  },
+  {
+    "name": "MLP",
+    "seed": 1,
+    "n_params": 4849,
+    "rel_l2": 2.2056476154830307e-05,
+    "max_err": 2.6881694793701172e-05,
+    "best_loss": 1.873340443125926e-05,
+    "n_steps": 5000,
+    "train_time": 2.928901999955997,
+    "stop_reason": "max_steps"
+  },
+  {
+    "name": "MLP",
+    "seed": 2,
+    "n_params": 4849,
+    "rel_l2": 2.83010504062986e-05,
+    "max_err": 3.439188003540039e-05,
+    "best_loss": 3.0417008019867353e-05,
+    "n_steps": 5000,
+    "train_time": 2.9434269580524415,
+    "stop_reason": "max_steps"
+  },
+  {
+    "name": "KANN_spline",
+    "seed": 0,
+    "n_params": 4896,
+    "rel_l2": 1.0370514246460516e-05,
+    "max_err": 1.9073486328125e-05,
+    "best_loss": 1.0245933481201064e-05,
+    "n_steps": 5000,
+    "train_time": 15.096575625007972,
+    "stop_reason": "max_steps"
+  },
+  {
+    "name": "KANN_spline",
+    "seed": 1,
+    "n_params": 4896,
+    "rel_l2": 1.4211513189366087e-05,
+    "max_err": 1.9341707229614258e-05,
+    "best_loss": 6.200284406077117e-05,
+    "n_steps": 5000,
+    "train_time": 14.821859166957438,
+    "stop_reason": "max_steps"
+  },
+  {
+    "name": "KANN_spline",
+    "seed": 2,
+    "n_params": 4896,
+    "rel_l2": 1.0057335202873219e-05,
+    "max_err": 1.4960765838623047e-05,
+    "best_loss": 8.964195330918301e-06,
+    "n_steps": 5000,
+    "train_time": 14.956810959149152,
+    "stop_reason": "max_steps"
+  },
+  {
+    "name": "KANN_cheb",
+    "seed": 0,
+    "n_params": 3808,
+    "rel_l2": 5.071657142252661e-06,
+    "max_err": 9.715557098388672e-06,
+    "best_loss": 0.000321434810757637,
+    "n_steps": 5000,
+    "train_time": 5.749326915945858,
+    "stop_reason": "max_steps"
+  },
+  {
+    "name": "KANN_cheb",
+    "seed": 1,
+    "n_params": 3808,
+    "rel_l2": 8.71704105520621e-06,
+    "max_err": 1.1533498764038086e-05,
+    "best_loss": 0.00023316226725000888,
+    "n_steps": 3201,
+    "train_time": 3.867295832838863,
+    "stop_reason": "converged"
+  },
+  {
+    "name": "KANN_cheb",
+    "seed": 2,
+    "n_params": 3808,
+    "rel_l2": 1.8883965822169557e-06,
+    "max_err": 3.814697265625e-06,
+    "best_loss": 6.841034337412566e-05,
+    "n_steps": 3501,
+    "train_time": 4.162066458025947,
+    "stop_reason": "converged"
+  }
+]

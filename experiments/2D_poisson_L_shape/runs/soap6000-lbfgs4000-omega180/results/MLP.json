@@ -1,0 +1,110 @@
+{
+  "settings": {
+    "model": {
+      "type": "MLPConfig",
+      "widths": [
+        2,
+        96,
+        96,
+        96,
+        1
+      ],
+      "activation": "silu",
+      "init": "lecun_normal"
+    },
+    "train": {
+      "stages": [
+        {
+          "optimizer": "soap",
+          "steps": 6000,
+          "lr": 0.001,
+          "options": {}
+        },
+        {
+          "optimizer": "lbfgs",
+          "steps": 4000,
+          "lr": null,
+          "options": {}
+        }
+      ],
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "check_every": 100,
+      "rel_tol": 1e-06,
+      "patience": 5,
+      "restore_best": true,
+      "verbose_every": 500
+    },
+    "problem": {
+      "omega_deg": 180,
+      "n_grid": 64,
+      "n_eval": 128,
+      "bc_density": 75
+    },
+    "wrap": null
+  },
+  "runs": [
+    {
+      "seed": 0,
+      "n_params": 19009,
+      "rel_l2": 1.1382427804819383e-05,
+      "max_err": 3.212163728833102e-05,
+      "best_loss": 3.8886520385516917e-10,
+      "n_steps": 5201,
+      "train_time": 239.958770792,
+      "stage_ends": [
+        1201,
+        5201
+      ],
+      "stop_reasons": [
+        "converged",
+        "max_steps"
+      ]
+    },
+    {
+      "seed": 1,
+      "n_params": 19009,
+      "rel_l2": 5.575081974402418e-06,
+      "max_err": 1.3565979406715556e-05,
+      "best_loss": 1.9120080203440035e-10,
+      "n_steps": 5601,
+      "train_time": 273.2762948749878,
+      "stage_ends": [
+        1601,
+        5601
+      ],
+      "stop_reasons": [
+        "converged",
+        "max_steps"
+      ]
+    },
+    {
+      "seed": 2,
+      "n_params": 19009,
+      "rel_l2": 2.088045436784308e-06,
+      "max_err": 7.167579047617778e-06,
+      "best_loss": 6.194940383150906e-11,
+      "n_steps": 5801,
+      "train_time": 253.49166520801373,
+      "stage_ends": [
+        1801,
+        5801
+      ],
+      "stop_reasons": [
+        "converged",
+        "max_steps"
+      ]
+    }
+  ],
+  "created": "2026-10-26T16:20:27",
+  "versions": {
+    "jax": "0.11.1",
+    "flax": "0.12.9",
+    "optax": "0.2.8",
+    "soap-jax": "0.2.2"
+  },
+  "x64": true
+}

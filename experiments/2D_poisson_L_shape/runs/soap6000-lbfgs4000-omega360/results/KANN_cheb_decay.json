@@ -1,0 +1,129 @@
+{
+  "settings": {
+    "model": {
+      "type": "KANNConfig",
+      "widths": [
+        2,
+        36,
+        36,
+        36,
+        1
+      ],
+      "basis": "cheb",
+      "basis_options": {
+        "degree": 5,
+        "scale": 2.0,
+        "decay": -2.0
+      },
+      "input_options": {
+        "domain": [
+          [
+            -1.0,
+            -1.0
+          ],
+          [
+            1.0,
+            1.0
+          ]
+        ]
+      },
+      "coeff_std": 0.1,
+      "base_init": "he_uniform",
+      "decay_in_forward": false
+    },
+    "train": {
+      "stages": [
+        {
+          "optimizer": "soap",
+          "steps": 6000,
+          "lr": 0.001,
+          "options": {}
+        },
+        {
+          "optimizer": "lbfgs",
+          "steps": 4000,
+          "lr": null,
+          "options": {}
+        }
+      ],
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "check_every": 100,
+      "rel_tol": 1e-06,
+      "patience": 5,
+      "restore_best": true,
+      "verbose_every": 500
+    },
+    "problem": {
+      "omega_deg": 360,
+      "n_grid": 64,
+      "n_eval": 128,
+      "bc_density": 75
+    },
+    "wrap": null
+  },
+  "runs": [
+    {
+      "seed": 0,
+      "n_params": 18900,
+      "rel_l2": 0.18289127042387704,
+      "max_err": 0.5278290498023115,
+      "best_loss": 0.028302325621992634,
+      "n_steps": 3902,
+      "train_time": 396.7202823749976,
+      "stage_ends": [
+        1801,
+        3902
+      ],
+      "stop_reasons": [
+        "converged",
+        "converged"
+      ]
+    },
+    {
+      "seed": 1,
+      "n_params": 18900,
+      "rel_l2": 0.18289239764986548,
+      "max_err": 0.5278299512761779,
+      "best_loss": 0.028302470209936287,
+      "n_steps": 4002,
+      "train_time": 422.00774220898165,
+      "stage_ends": [
+        2201,
+        4002
+      ],
+      "stop_reasons": [
+        "converged",
+        "converged"
+      ]
+    },
+    {
+      "seed": 2,
+      "n_params": 18900,
+      "rel_l2": 0.18288967100413525,
+      "max_err": 0.5278226008520458,
+      "best_loss": 0.028302513373399202,
+      "n_steps": 3702,
+      "train_time": 397.6579037499905,
+      "stage_ends": [
+        1501,
+        3702
+      ],
+      "stop_reasons": [
+        "converged",
+        "converged"
+      ]
+    }
+  ],
+  "created": "2026-10-26T21:52:56",
+  "versions": {
+    "jax": "0.11.1",
+    "flax": "0.12.9",
+    "optax": "0.2.8",
+    "soap-jax": "0.2.2"
+  },
+  "x64": true
+}

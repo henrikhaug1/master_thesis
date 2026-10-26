@@ -127,14 +127,14 @@ def _train_stage(model, loss, stage, tx, cfg, metric_fn, log):
         # The arrays are immutable, so keeping a reference is enough.
         before = params
         params, opt_state, loss_val = train_step(params, opt_state)
-        l = float(loss_val)
-        log["loss"].append(l)
+        loss_now = float(loss_val)
+        log["loss"].append(loss_now)
 
-        if not math.isfinite(l):
+        if not math.isfinite(loss_now):
             stop_reason = "diverged"
             break
-        if l < best_loss:
-            best_loss = l
+        if loss_now < best_loss:
+            best_loss = loss_now
             if cfg.restore_best:
                 best_params = before
         if not checking:
@@ -147,7 +147,7 @@ def _train_stage(model, loss, stage, tx, cfg, metric_fn, log):
             break
 
         if cfg.verbose_every and i % cfg.verbose_every == 0:
-            print(f"{stage.optimizer:<5} step {i:5d} | loss {l:.6e}")
+            print(f"{stage.optimizer:<5} step {i:5d} | loss {loss_now:.6e}")
 
     nnx.update(model, params if best_params is None else best_params)
     return best_loss, stop_reason

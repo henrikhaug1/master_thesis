@@ -82,10 +82,10 @@ def main():
     x = jnp.linspace(X_MIN, X_MAX, N_EVAL)
     eval_pts = x[:, None]
 
-    if HARD_BC:
-        loss = lambda model: loss_fn(model, pts, residual, hard_constraints=True)
-    else:
-        loss = lambda model: loss_fn(model, pts, residual, bc_fn=bc_fn)
+    def loss(model):
+        if HARD_BC:
+            return loss_fn(model, pts, residual, hard_constraints=True)
+        return loss_fn(model, pts, residual, bc_fn=bc_fn)
 
     compare_models(
         MODELS,

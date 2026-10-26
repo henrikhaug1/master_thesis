@@ -107,12 +107,12 @@ def main():
         ]
     )
 
-    if HARD_BC:
-        loss = lambda model: loss_fn(
-            model, pts, residual=residual, ic_fn=lambda m: ic_fn(m, ic_pts)
-        )
-    else:
-        loss = lambda model: loss_fn(
+    def loss(model):
+        if HARD_BC:
+            return loss_fn(
+                model, pts, residual=residual, ic_fn=lambda m: ic_fn(m, ic_pts)
+            )
+        return loss_fn(
             model,
             pts,
             residual=residual,

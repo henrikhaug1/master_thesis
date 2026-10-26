@@ -120,12 +120,10 @@ def main():
         ]
     )
 
-    if HARD_BC:
-        loss = lambda model: loss_fn(model, pts, residual, hard_constraints=True)
-    else:
-        loss = lambda model: loss_fn(
-            model, pts, residual, bc_fn=lambda m: bc_fn(m, bc_pts)
-        )
+    def loss(model):
+        if HARD_BC:
+            return loss_fn(model, pts, residual, hard_constraints=True)
+        return loss_fn(model, pts, residual, bc_fn=lambda m: bc_fn(m, bc_pts))
 
     U_exact = exact_solution(X, Y)
     results, run_dir = compare_models(

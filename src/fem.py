@@ -66,9 +66,7 @@ def rel_l2_error(uh: fem.Function, u_exact: ufl.core.expr.Expr) -> float:
     """
     msh = uh.function_space.mesh
     norm = fem.assemble_scalar(fem.form(ufl.inner(u_exact, u_exact) * ufl.dx))
-    return l2_error(uh, u_exact) / float(
-        np.sqrt(msh.comm.allreduce(norm, op=MPI.SUM))
-    )
+    return l2_error(uh, u_exact) / float(np.sqrt(msh.comm.allreduce(norm, op=MPI.SUM)))
 
 
 def n_dofs(V: fem.FunctionSpace) -> int:

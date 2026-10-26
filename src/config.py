@@ -13,8 +13,8 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from src.bases import BSplineBasis, ChebyshevBasis
-from src.pinns import KANN, MLP
+from src.bases import BSplineBasis, ChebyshevBasis  # noqa: E402 -- after the x64 switch
+from src.pinns import KANN, MLP  # noqa: E402
 
 ACTIVATIONS = {
     "silu": nnx.silu,

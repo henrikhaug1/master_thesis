@@ -19,18 +19,32 @@ def _to_reference(x, domain, scale=1.0):
 
 
 class BSplineBasis:
-    def __init__(self, grid_size=5, spline_order=3, grid_range=(-0.5, 10.5)):
+    """B-splines of order `spline_order` on `grid_size` equal intervals of [-1, 1].
+
+    Inputs are mapped onto [-1, 1] first, exactly as in ChebyshevBasis, so all
+    `grid_size` intervals are in use. A fixed grid in raw input units would not
+    be: one 2.2 wide leaves an input in [0, 1] inside a single interval, where
+    each edge collapses to one cubic.
+
+    Args:
+        grid_size: number of intervals on [-1, 1]; n_basis = grid_size + spline_order.
+        spline_order: polynomial degree of each piece.
+        domain, scale: as in ChebyshevBasis -- the PDE domain for the input
+            layer, None (a tanh squash of width `scale`) for hidden layers.
+    """
+
+    def __init__(self, grid_size=5, spline_order=3, domain=None, scale=1.0):
         self.spline_order = spline_order
-        h = (grid_range[1] - grid_range[0]) / grid_size
-        self.grid = (
-            jnp.arange(-spline_order, grid_size + spline_order + 1) * h + grid_range[0]
-        )
+        self.domain = domain
+        self.scale = scale
+        h = 2.0 / grid_size
+        self.grid = jnp.arange(-spline_order, grid_size + spline_order + 1) * h - 1.0
         self.n_basis = grid_size + spline_order
         self.coeff_scale = jnp.ones(self.n_basis)
 
     def __call__(self, x):
         grid = self.grid
-        x = x[..., None]
+        x = _to_reference(x, domain=self.domain, scale=self.scale)[..., None]
         bases = ((x >= grid[:-1]) & (x < grid[1:])).astype(x.dtype)
         for p in range(1, self.spline_order + 1):
             left = (

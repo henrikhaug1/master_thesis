@@ -120,7 +120,7 @@ class KANNConfig:
     basis_options: keyword arguments of the basis class, used in every layer.
     input_options: overrides of `basis_options` for the first layer only --
         typically the domain of the PDE, which is known there but not in the
-        hidden layers (see ChebyshevBasis).
+        hidden layers (see ChebyshevBasis and BSplineBasis).
     coeff_std: standard deviation of the initial basis coefficients.
     base_init: a key of INITIALIZERS, for the SiLU base weights.
     decay_in_forward: apply the basis' coefficient decay in the forward pass

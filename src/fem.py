@@ -58,7 +58,12 @@ def l2_error(uh: fem.Function, u_exact: ufl.core.expr.Expr) -> float:
 
 
 def rel_l2_error(uh: fem.Function, u_exact: ufl.core.expr.Expr) -> float:
-    """Relative L2 error, matching the metric src.metrics reports for the models."""
+    """Relative L2 error integrated over the mesh.
+
+    Not the networks' metric: src.metrics.rel_l2_error is a discrete norm over
+    sampled points. Compare against the networks with that one, applied to the
+    solution sampled with eval_at (as experiments/1D_poisson/plot.py does).
+    """
     msh = uh.function_space.mesh
     norm = fem.assemble_scalar(fem.form(ufl.inner(u_exact, u_exact) * ufl.dx))
     return l2_error(uh, u_exact) / float(

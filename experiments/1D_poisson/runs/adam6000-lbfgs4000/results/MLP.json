@@ -1,0 +1,113 @@
+{
+  "settings": {
+    "model": {
+      "type": "MLPConfig",
+      "widths": [
+        1,
+        48,
+        48,
+        48,
+        1
+      ],
+      "activation": "silu",
+      "init": "lecun_normal"
+    },
+    "train": {
+      "stages": [
+        {
+          "optimizer": "adam",
+          "steps": 6000,
+          "lr": 0.003,
+          "options": {}
+        },
+        {
+          "optimizer": "lbfgs",
+          "steps": 4000,
+          "lr": null,
+          "options": {}
+        }
+      ],
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "check_every": 100,
+      "rel_tol": 1e-06,
+      "patience": 5,
+      "restore_best": true,
+      "verbose_every": 500
+    },
+    "problem": {
+      "domain": [
+        0.0,
+        1.0
+      ],
+      "n_points": 200,
+      "n_eval": 1000,
+      "hard_bc": true
+    },
+    "wrap": "hard_bc"
+  },
+  "runs": [
+    {
+      "seed": 0,
+      "n_params": 4849,
+      "rel_l2": 9.41669541770269e-09,
+      "max_err": 1.3068987669839771e-08,
+      "best_loss": 2.1687431240120132e-11,
+      "n_steps": 10000,
+      "train_time": 15.16108591700322,
+      "stage_ends": [
+        6000,
+        10000
+      ],
+      "stop_reasons": [
+        "max_steps",
+        "max_steps"
+      ]
+    },
+    {
+      "seed": 1,
+      "n_params": 4849,
+      "rel_l2": 1.3690497009303034e-08,
+      "max_err": 2.0732550676250128e-08,
+      "best_loss": 1.2358774634986376e-11,
+      "n_steps": 10000,
+      "train_time": 14.681274707982084,
+      "stage_ends": [
+        6000,
+        10000
+      ],
+      "stop_reasons": [
+        "max_steps",
+        "max_steps"
+      ]
+    },
+    {
+      "seed": 2,
+      "n_params": 4849,
+      "rel_l2": 2.331737162471023e-07,
+      "max_err": 3.175827040236001e-07,
+      "best_loss": 5.4047147383581e-09,
+      "n_steps": 5701,
+      "train_time": 10.360114958981285,
+      "stage_ends": [
+        1701,
+        5701
+      ],
+      "stop_reasons": [
+        "converged",
+        "max_steps"
+      ]
+    }
+  ],
+  "created": "2026-10-26T15:18:33",
+  "versions": {
+    "jax": "0.11.1",
+    "flax": "0.12.9",
+    "optax": "0.2.8",
+    "soap-jax": "0.2.2"
+  },
+  "x64": true
+}

@@ -8,7 +8,10 @@ the exact settings that produced it (see src.experiment).
 from dataclasses import dataclass, field
 
 import flax.nnx as nnx
+import jax
 import jax.numpy as jnp
+
+jax.config.update("jax_enable_x64", True)
 
 from src.bases import BSplineBasis, ChebyshevBasis
 from src.pinns import KANN, MLP

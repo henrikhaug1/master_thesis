@@ -30,7 +30,7 @@ def load_fem(path):
 
     fem.npz also stores the error integrated over the mesh, but the networks
     are scored on the evaluation points, so both are recomputed here from the
-    sampled solution, in float32 like the networks.
+    sampled solution, in the same precision as the networks.
     """
     with jnp.load(path) as data:
         fem = {k: jnp.asarray(data[k]) for k in data.files}

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import flax.nnx as nnx
+import jax
 import jax.numpy as jnp
 from jax import Array
 
@@ -169,6 +170,7 @@ def _save(stem: Path, settings, runs, u_exact, x) -> None:
         "runs": [{k: v for k, v in r.items() if k not in ARRAYS} for r in runs],
         "created": datetime.now().isoformat(timespec="seconds"),
         "versions": {p: version(p) for p in ("jax", "flax", "optax", "soap-jax")},
+        "x64": jax.config.jax_enable_x64,
     }
     stem.with_suffix(".json").write_text(
         json.dumps(meta, indent=2, default=lambda o: o.tolist())

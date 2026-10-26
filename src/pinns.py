@@ -16,9 +16,16 @@ class MLP(nnx.Module):
     ):
         self.act_fun = act_fun
         self.out_fun = out_fun
+        # nnx.Linear keeps float32 weights even with x64 on; this follows the
+        # switch instead, like the KANN coefficients from jax.random do.
+        dtype = jax.dtypes.canonicalize_dtype(jnp.float64)
         self.layers = nnx.List(
             nnx.Linear(
-                layer_sizes[i], layer_sizes[i + 1], kernel_init=kernel_init, rngs=rngs
+                layer_sizes[i],
+                layer_sizes[i + 1],
+                kernel_init=kernel_init,
+                param_dtype=dtype,
+                rngs=rngs,
             )
             for i in range(len(layer_sizes) - 1)
         )

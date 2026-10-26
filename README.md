@@ -10,6 +10,9 @@ The networks run on the host, in the uv environment:
 uv run experiments/1D_poisson/1Dpoisson.py
 ```
 
+Everything runs in float64: `src/config.py`, which every experiment imports,
+switches on `jax_enable_x64`. Each result's `.json` records it under `x64`.
+
 ## Changing an experiment
 
 Every setting sits in a block at the top of the experiment script: the problem

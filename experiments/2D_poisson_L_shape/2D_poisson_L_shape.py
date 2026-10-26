@@ -23,7 +23,7 @@ Y_MIN, Y_MAX = -1.0, 1.0
 N_GRID = 64  # collocation grid is N_GRID x N_GRID minus the cut-out wedge
 N_EVAL = 128  # error grid, likewise; it shares only the square's corners with N_GRID
 BC_DENSITY = 75  # boundary points per unit length; about 600 points at 270 degrees
-OMEGA_DEG = 200  # interior angle at the corner, 180 < OMEGA_DEG <= 360; 270 is the L
+OMEGA_DEG = 200  # interior angle at the corner, 180 <= OMEGA_DEG <= 360; 270 is the L
 
 TRAIN = TrainConfig(
     stages=(Stage("soap", 6000, lr=1e-3), Stage("lbfgs", 4000)),

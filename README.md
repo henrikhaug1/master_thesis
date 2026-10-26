@@ -54,8 +54,9 @@ runs/soap6000-lbfgs4000/
     figs/*.pdf
 ```
 
-Every run trains all models from scratch and overwrites the run folder's
-results. Pass `run_name=...` to `compare_models` to keep a variant in its own
+Every run trains all models from scratch and first deletes the run folder's
+`results/` and `figs/`, so no model left over from an earlier run is loaded or
+plotted with the new ones. Pass `run_name=...` to `compare_models` to keep a variant in its own
 folder. `src.experiment.load_results(run_dir)` reads a finished run back.
 
 ## Running the FEM reference solutions

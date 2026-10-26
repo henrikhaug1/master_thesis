@@ -1,4 +1,5 @@
 import json
+import shutil
 from collections.abc import Callable, Mapping
 from dataclasses import asdict
 from datetime import datetime
@@ -41,6 +42,10 @@ def compare_models(
 ) -> tuple[Results, Path]:
     run_dir = Path(out_dir) / "runs" / (run_name or train_cfg.name)
     figs = run_dir / "figs"
+    # A rerun replaces the run as a whole: left in place, the files of a model
+    # since removed from `models` would be loaded and plotted with the new ones.
+    for sub in ("results", "figs"):
+        shutil.rmtree(run_dir / sub, ignore_errors=True)
     figs.mkdir(parents=True, exist_ok=True)
 
     results: Results = {}

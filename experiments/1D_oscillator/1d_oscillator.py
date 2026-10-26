@@ -31,7 +31,12 @@ CHEB = dict(degree=5, scale=2.0)
 INPUT = dict(domain=(T_MIN, T_MAX))
 MODELS = {
     "MLP": MLPConfig((1, 48, 48, 48, 1)),
-    "KANN_spline_same_params": KANNConfig((1, 16, 16, 16, 1), basis="bspline"),
+    # "KANN_spline_same_params": KANNConfig(
+    #    (1, 16, 16, 16, 1),
+    #    basis="bspline",
+    #    basis_options=dict(scale=2.0),
+    #    input_options=INPUT,
+    # ),
     "KANN_cheb": KANNConfig(
         (1, 16, 16, 16, 1), basis="cheb", basis_options=CHEB, input_options=INPUT
     ),
@@ -46,8 +51,10 @@ MODELS = {
 
 # ---------- Problem ----------
 def exact_solution(t):
-    w = jnp.sqrt(4 * K - MU**2) / 2
-    return jnp.exp(-MU / 2 * t) * jnp.cos(w * t)
+    """Underdamped solution; the sine term is what makes u'(0) = 0."""
+    w = jnp.sqrt(4 * M * K - MU**2) / (2 * M)
+    decay = MU / (2 * M)
+    return jnp.exp(-decay * t) * (jnp.cos(w * t) + decay / w * jnp.sin(w * t))
 
 
 def residual(model, pts):

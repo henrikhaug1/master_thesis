@@ -39,9 +39,9 @@ TRAIN = TrainConfig(
 
 CHEB = dict(degree=5, scale=2.0)
 INPUT = dict(domain=((0.0, 0.0), (L, T)))
+# Widths give every model about as many parameters as the MLP.
 MODELS = {
     "MLP": MLPConfig((2, 96, 96, 96, 1)),
-    # Width cut until the parameter count matches the MLP instead.
     "KANN_spline_same_params": KANNConfig(
         (2, 32, 32, 32, 1),
         basis="bspline",
@@ -49,10 +49,10 @@ MODELS = {
         input_options=INPUT,
     ),
     "KANN_cheb": KANNConfig(
-        (2, 32, 32, 32, 1), basis="cheb", basis_options=CHEB, input_options=INPUT
+        (2, 36, 36, 36, 1), basis="cheb", basis_options=CHEB, input_options=INPUT
     ),
     "KANN_cheb_decay": KANNConfig(
-        (2, 32, 32, 32, 1),
+        (2, 36, 36, 36, 1),
         basis="cheb",
         basis_options={**CHEB, "decay": -2.0},
         input_options=INPUT,

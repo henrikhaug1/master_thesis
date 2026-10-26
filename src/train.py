@@ -1,5 +1,6 @@
 """Training: a run is a sequence of optimizer stages (see src.config.Stage)."""
 
+import math
 import time
 from dataclasses import dataclass
 
@@ -82,7 +83,7 @@ def _train_stage(model, loss, stage, tx, cfg, metric_fn, log):
     The parameters are trained as a plain pytree and written back into `model`
     only where it is read: before metric_fn and at the end of the stage.
 
-    Returns (best checked loss, stop reason).
+    Returns (lowest loss of any step, stop reason).
     """
     graphdef, params, rest = nnx.split(model, nnx.Param, ...)
     # Raw arrays instead of Param wrappers, which SOAP's tree_map trips over.
@@ -117,27 +118,27 @@ def _train_stage(model, loss, stage, tx, cfg, metric_fn, log):
 
     for i in range(stage.steps):
         checking = i % cfg.check_every == 0
-        if checking:
-            # Snapshot before the step: the loss it returns belongs to these.
-            # The arrays are immutable, so keeping a reference is enough.
-            snapshot = params if cfg.restore_best else None
-            if metric_fn is not None:
-                nnx.update(model, params)
-                log["metric_steps"].append(offset + i)
-                log["metric"].append(float(metric_fn(model)))
+        if checking and metric_fn is not None:
+            nnx.update(model, params)
+            log["metric_steps"].append(offset + i)
+            log["metric"].append(float(metric_fn(model)))
 
+        # The loss a step returns belongs to the parameters it started from.
+        # The arrays are immutable, so keeping a reference is enough.
+        before = params
         params, opt_state, loss_val = train_step(params, opt_state)
-        log["loss"].append(loss_val)
-        if not checking:
-            continue
+        l = float(loss_val)
+        log["loss"].append(l)
 
-        if not jnp.isfinite(loss_val):
+        if not math.isfinite(l):
             stop_reason = "diverged"
             break
-
-        l = float(loss_val)
         if l < best_loss:
-            best_loss, best_params = l, snapshot
+            best_loss = l
+            if cfg.restore_best:
+                best_params = before
+        if not checking:
+            continue
 
         stagnant = 0 if best_loss < ref * (1 - cfg.rel_tol) else stagnant + 1
         ref = best_loss

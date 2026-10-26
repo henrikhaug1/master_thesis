@@ -67,10 +67,12 @@ class TrainConfig:
     stages: optimizer phases, run in order; each starts from the parameters the
         previous one ended with.
     seeds: one training run per seed; results are reported over all of them.
-    check_every: steps between checks of the loss and the error metric.
+    check_every: steps between records of the error metric and convergence
+        checks. The best loss and divergence are tracked at every step.
     rel_tol, patience: a stage stops early once the best loss has improved by
         less than a relative `rel_tol` for `patience` checks in a row.
-    restore_best: end each stage on the parameters with the lowest checked loss.
+    restore_best: end each stage on the parameters with the lowest loss of any
+        step, rather than on the last ones.
     verbose_every: steps between progress prints; 0 silences them.
     """
 

@@ -44,7 +44,8 @@ MODELS = {
     "KANN_spline_same_params": KANNConfig(
         (2, 32, 32, 32, 1),
         basis="bspline",
-        basis_options=dict(grid_range=(-0.5, 13.0)),
+        basis_options=dict(scale=2.0),
+        input_options=INPUT,
     ),
     "KANN_cheb": KANNConfig(
         (2, 32, 32, 32, 1), basis="cheb", basis_options=CHEB, input_options=INPUT

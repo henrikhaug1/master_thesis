@@ -33,7 +33,12 @@ CHEB = dict(degree=5, scale=2.0)
 INPUT = dict(domain=(X_MIN, X_MAX))
 MODELS = {
     "MLP": MLPConfig((1, 48, 48, 48, 1)),
-    "KANN_spline_same_params": KANNConfig((1, 16, 16, 16, 1), basis="bspline"),
+    "KANN_spline_same_params": KANNConfig(
+        (1, 16, 16, 16, 1),
+        basis="bspline",
+        basis_options=dict(scale=2.0),
+        input_options=INPUT,
+    ),
     "KANN_cheb": KANNConfig(
         (1, 16, 16, 16, 1), basis="cheb", basis_options=CHEB, input_options=INPUT
     ),

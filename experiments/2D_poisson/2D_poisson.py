@@ -24,7 +24,8 @@ pi = jnp.pi
 # ---------- Settings ----------
 X_MIN, X_MAX = 0.0, 1.0
 Y_MIN, Y_MAX = 0.0, 1.0
-N_GRID = 64  # collocation grid is N_GRID x N_GRID, also where the error is measured
+N_GRID = 64  # collocation grid is N_GRID x N_GRID
+N_EVAL = 128  # error grid is N_EVAL x N_EVAL; it shares only the corners with N_GRID
 N_BC = 100  # points per edge, used only when HARD_BC is False
 HARD_BC = True  # impose u = 0 on the boundary exactly instead of as a loss term
 
@@ -94,10 +95,17 @@ def hard_bc(net):
 
 
 def main():
-    xg = jnp.linspace(X_MIN, X_MAX, N_GRID)
-    yg = jnp.linspace(Y_MIN, Y_MAX, N_GRID)
+    X_c, Y_c = jnp.meshgrid(
+        jnp.linspace(X_MIN, X_MAX, N_GRID),
+        jnp.linspace(Y_MIN, Y_MAX, N_GRID),
+        indexing="ij",
+    )
+    pts = jnp.stack([X_c.ravel(), Y_c.ravel()], axis=-1)
+
+    xg = jnp.linspace(X_MIN, X_MAX, N_EVAL)
+    yg = jnp.linspace(Y_MIN, Y_MAX, N_EVAL)
     X, Y = jnp.meshgrid(xg, yg, indexing="ij")
-    pts = jnp.stack([X.ravel(), Y.ravel()], axis=-1)
+    eval_pts = jnp.stack([X.ravel(), Y.ravel()], axis=-1)
 
     # The four edges, used only when the BC is imposed softly.
     xb = jnp.linspace(X_MIN, X_MAX, N_BC)
@@ -123,13 +131,14 @@ def main():
         MODELS,
         TRAIN,
         loss,
-        predict_fn=lambda model: model(pts)[:, 0],
+        predict_fn=lambda model: model(eval_pts)[:, 0],
         u_exact=U_exact.ravel(),
         out_dir=OUT_DIR,
         title=TITLE,
         problem=dict(
             domain=((X_MIN, Y_MIN), (X_MAX, Y_MAX)),
             n_grid=N_GRID,
+            n_eval=N_EVAL,
             n_bc=N_BC,
             hard_bc=HARD_BC,
         ),
@@ -143,7 +152,7 @@ def main():
     figs = run_dir / "figs"
 
     # Slice through the middle of the domain, u(x, y = 0.5).
-    j = N_GRID // 2
+    j = N_EVAL // 2
     plot_solution_grid(
         xg,
         U_exact[:, j],

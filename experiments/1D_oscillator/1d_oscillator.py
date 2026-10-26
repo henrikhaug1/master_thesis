@@ -20,7 +20,8 @@ TITLE = "1D Oscillator"
 # ---------- Settings ----------
 M, MU, K = 1.0, 0.4, 4.0  # mass, damping, stiffness
 T_MIN, T_MAX = 0.0, 10.0
-N_POINTS = 200  # collocation points, also where the error is measured
+N_POINTS = 200  # collocation points
+N_EVAL = 1000  # where the error is measured; only the endpoints are collocation points
 
 TRAIN = TrainConfig(
     stages=(Stage("soap", 6000, lr=1e-3), Stage("lbfgs", 4000)),
@@ -68,18 +69,26 @@ def ic_fn(model, t0=jnp.array([[T_MIN]]), u0=1.0, v0=0.0):
 
 
 def main():
-    t = jnp.linspace(T_MIN, T_MAX, N_POINTS)
-    pts = t[:, None]
+    pts = jnp.linspace(T_MIN, T_MAX, N_POINTS)[:, None]
+    t = jnp.linspace(T_MIN, T_MAX, N_EVAL)
+    eval_pts = t[:, None]
 
     compare_models(
         MODELS,
         TRAIN,
         loss=lambda model: loss_fn(model, pts, residual, ic_fn),
-        predict_fn=lambda model: model(pts)[:, 0],
+        predict_fn=lambda model: model(eval_pts)[:, 0],
         u_exact=exact_solution(t),
         out_dir=OUT_DIR,
         title=TITLE,
-        problem=dict(m=M, mu=MU, k=K, domain=(T_MIN, T_MAX), n_points=N_POINTS),
+        problem=dict(
+            m=M,
+            mu=MU,
+            k=K,
+            domain=(T_MIN, T_MAX),
+            n_points=N_POINTS,
+            n_eval=N_EVAL,
+        ),
         x=t,
         x_label="t",
         y_label="u(t)",

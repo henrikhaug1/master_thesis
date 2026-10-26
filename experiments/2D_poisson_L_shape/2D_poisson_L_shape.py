@@ -21,6 +21,7 @@ pi = jnp.pi
 X_MIN, X_MAX = -1.0, 1.0
 Y_MIN, Y_MAX = -1.0, 1.0
 N_GRID = 64  # collocation grid is N_GRID x N_GRID minus the cut-out wedge
+N_EVAL = 128  # error grid, likewise; it shares only the square's corners with N_GRID
 BC_DENSITY = 75  # boundary points per unit length; about 600 points at 270 degrees
 OMEGA_DEG = 200  # interior angle at the corner, 180 < OMEGA_DEG <= 360; 270 is the L
 
@@ -106,11 +107,19 @@ def main():
     omega = OMEGA_DEG * pi / 180
     title = f"{TITLE} omega {OMEGA_DEG}"
 
-    xg = jnp.linspace(X_MIN, X_MAX, N_GRID)
-    yg = jnp.linspace(Y_MIN, Y_MAX, N_GRID)
+    X_c, Y_c = jnp.meshgrid(
+        jnp.linspace(X_MIN, X_MAX, N_GRID),
+        jnp.linspace(Y_MIN, Y_MAX, N_GRID),
+        indexing="ij",
+    )
+    inside = in_domain(X_c, Y_c, omega)
+    pts = jnp.stack([X_c[inside], Y_c[inside]], axis=-1)
+
+    xg = jnp.linspace(X_MIN, X_MAX, N_EVAL)
+    yg = jnp.linspace(Y_MIN, Y_MAX, N_EVAL)
     X, Y = jnp.meshgrid(xg, yg, indexing="ij")
     mask = in_domain(X, Y, omega)
-    pts = jnp.stack([X[mask], Y[mask]], axis=-1)
+    eval_pts = jnp.stack([X[mask], Y[mask]], axis=-1)
 
     bc_pts = boundary_points(omega, BC_DENSITY)
     bc_vals = exact_solution(bc_pts[:, 0], bc_pts[:, 1], omega)
@@ -125,11 +134,13 @@ def main():
         loss=lambda model: loss_fn(
             model, pts, residual, bc_fn=lambda m: bc_fn(m, bc_pts, bc_vals)
         ),
-        predict_fn=lambda model: model(pts)[:, 0],
-        u_exact=exact_solution(pts[:, 0], pts[:, 1], omega),
+        predict_fn=lambda model: model(eval_pts)[:, 0],
+        u_exact=exact_solution(eval_pts[:, 0], eval_pts[:, 1], omega),
         out_dir=OUT_DIR,
         title=title,
-        problem=dict(omega_deg=OMEGA_DEG, n_grid=N_GRID, bc_density=BC_DENSITY),
+        problem=dict(
+            omega_deg=OMEGA_DEG, n_grid=N_GRID, n_eval=N_EVAL, bc_density=BC_DENSITY
+        ),
         run_name=f"{TRAIN.name}-omega{OMEGA_DEG}",
     )
 
@@ -142,8 +153,8 @@ def main():
     U_exact = jnp.where(mask, exact_solution(X, Y, omega), jnp.nan)
     figs = run_dir / "figs"
 
-    # y = 0.52 lies inside the domain for every omega above 180 degrees.
-    j = 3 * N_GRID // 4
+    # y = 0.51 lies inside the domain for every omega of at least 180 degrees.
+    j = 3 * N_EVAL // 4
     plot_solution_grid(
         xg,
         U_exact[:, j],

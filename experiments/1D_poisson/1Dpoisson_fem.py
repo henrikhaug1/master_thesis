@@ -15,7 +15,7 @@ from mpi4py import MPI
 from src.fem import eval_at, n_dofs, rel_l2_error, save
 
 X_MIN, X_MAX = 0.0, 1.0
-N_POINTS = 200
+N_EVAL = 1000  # the networks' evaluation points, see 1Dpoisson.py
 
 N_ELEMENTS = 64
 DEGREE = 2
@@ -48,7 +48,7 @@ def main():
     uh = problem.solve()
     solve_time = time.perf_counter() - start
 
-    xq = np.linspace(X_MIN, X_MAX, N_POINTS)
+    xq = np.linspace(X_MIN, X_MAX, N_EVAL)
     u_fem = eval_at(uh, xq)
     u_exact = np.sin(np.pi * xq)
 

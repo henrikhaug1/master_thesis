@@ -21,7 +21,8 @@ pi = jnp.pi
 
 # ---------- Settings ----------
 X_MIN, X_MAX = 0.0, 1.0
-N_POINTS = 200  # collocation points, also where the error is measured
+N_POINTS = 200  # collocation points
+N_EVAL = 1000  # where the error is measured; only the endpoints are collocation points
 HARD_BC = True  # impose u(0) = u(1) = 0 exactly instead of as a loss term
 
 TRAIN = TrainConfig(
@@ -76,8 +77,9 @@ def hard_bc(net):
 
 
 def main():
-    x = jnp.linspace(X_MIN, X_MAX, N_POINTS)
-    pts = x[:, None]
+    pts = jnp.linspace(X_MIN, X_MAX, N_POINTS)[:, None]
+    x = jnp.linspace(X_MIN, X_MAX, N_EVAL)
+    eval_pts = x[:, None]
 
     if HARD_BC:
         loss = lambda model: loss_fn(model, pts, residual, hard_constraints=True)
@@ -88,11 +90,13 @@ def main():
         MODELS,
         TRAIN,
         loss,
-        predict_fn=lambda model: model(pts)[:, 0],
+        predict_fn=lambda model: model(eval_pts)[:, 0],
         u_exact=exact_solution(x),
         out_dir=OUT_DIR,
         title=TITLE,
-        problem=dict(domain=(X_MIN, X_MAX), n_points=N_POINTS, hard_bc=HARD_BC),
+        problem=dict(
+            domain=(X_MIN, X_MAX), n_points=N_POINTS, n_eval=N_EVAL, hard_bc=HARD_BC
+        ),
         wrap=hard_bc if HARD_BC else None,
         x=x,
         x_label="x",

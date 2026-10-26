@@ -25,7 +25,8 @@ C = 1.0  # wave speed
 L = 2 * jnp.pi
 K = jnp.pi / L  # wave number of the initial condition
 T = 2 * L / C  # one full period of cos(c k t)
-N_GRID = 60  # collocation grid is N_GRID x N_GRID, also where the error is measured
+N_GRID = 60  # collocation grid is N_GRID x N_GRID
+N_EVAL = 128  # error grid is N_EVAL x N_EVAL; it shares only the corners with N_GRID
 N_IC = 100  # points on t = 0
 N_BC = 100  # points on each of x = 0 and x = L, used only when HARD_BC is False
 HARD_BC = True  # impose u = 0 at x = 0, L exactly instead of as a loss term
@@ -85,10 +86,15 @@ def hard_bc(net):
 
 
 def main():
-    xg = jnp.linspace(0, L, N_GRID)
-    tg = jnp.linspace(0, T, N_GRID)
+    X_c, T_c = jnp.meshgrid(
+        jnp.linspace(0, L, N_GRID), jnp.linspace(0, T, N_GRID), indexing="ij"
+    )
+    pts = jnp.stack([X_c.ravel(), T_c.ravel()], axis=-1)
+
+    xg = jnp.linspace(0, L, N_EVAL)
+    tg = jnp.linspace(0, T, N_EVAL)
     X, T_grid = jnp.meshgrid(xg, tg, indexing="ij")
-    pts = jnp.stack([X.ravel(), T_grid.ravel()], axis=-1)
+    eval_pts = jnp.stack([X.ravel(), T_grid.ravel()], axis=-1)
 
     x_ic = jnp.linspace(0, L, N_IC)  # bottom edge t = 0
     ic_pts = jnp.stack([x_ic, jnp.zeros_like(x_ic)], axis=-1)
@@ -120,7 +126,7 @@ def main():
         MODELS,
         TRAIN,
         loss,
-        predict_fn=lambda model: model(pts)[:, 0],
+        predict_fn=lambda model: model(eval_pts)[:, 0],
         u_exact=U_exact.ravel(),
         out_dir=OUT_DIR,
         title=TITLE,
@@ -129,6 +135,7 @@ def main():
             L=L,
             T=T,
             n_grid=N_GRID,
+            n_eval=N_EVAL,
             n_ic=N_IC,
             n_bc=N_BC,
             hard_bc=HARD_BC,
@@ -144,7 +151,7 @@ def main():
     figs = run_dir / "figs"
 
     # Snapshots u(x, .) at a few fixed times.
-    for j in (0, N_GRID // 4, N_GRID // 2):
+    for j in (0, N_EVAL // 4, N_EVAL // 2):
         plot_solution_grid(
             xg,
             U_exact[:, j],

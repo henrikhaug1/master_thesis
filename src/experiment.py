@@ -128,7 +128,11 @@ def median_prediction(runs: list[Run]) -> Array:
 
 
 def summarize(results: Results) -> str:
-    """Table with one row per model, aggregated over its seeds."""
+    """Table with one row per model, aggregated over its seeds.
+
+    The std is the sample std (ddof=1): with a handful of seeds the population
+    std understates the spread, by a factor sqrt(2/3) for three. One seed gives nan.
+    """
     header = (
         f"{'model':<26}{'params':>8}{'rel L2 (mean +- std)':>24}"
         f"{'best loss':>12}{'steps':>8}{'time [s]':>10}"
@@ -141,7 +145,7 @@ def summarize(results: Results) -> str:
         )
         rows.append(
             f"{name:<26}{runs[0]['n_params']:>8}"
-            f"{rel.mean():>14.3e} +- {rel.std():<7.1e}"
+            f"{rel.mean():>14.3e} +- {rel.std(ddof=1):<7.1e}"
             f"{jnp.median(best):>12.3e}{int(jnp.median(steps)):>8}"
             f"{jnp.median(time):>10.1f}"
         )

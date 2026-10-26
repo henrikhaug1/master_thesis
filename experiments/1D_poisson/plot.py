@@ -53,7 +53,7 @@ def summary(results, fem) -> str:
         )
         rows.append(
             f"{name:<26}{runs[0]['n_params']:>8}"
-            f"{rel.mean():>14.3e} +- {rel.std():<7.1e}"
+            f"{rel.mean():>14.3e} +- {rel.std(ddof=1):<7.1e}"
             f"{jnp.median(err):>12.3e}{jnp.median(time):>10.1f}"
         )
     solve_time = (

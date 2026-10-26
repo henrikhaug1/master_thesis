@@ -1,0 +1,134 @@
+{
+  "settings": {
+    "model": {
+      "type": "KANNConfig",
+      "widths": [
+        2,
+        36,
+        36,
+        36,
+        1
+      ],
+      "basis": "cheb",
+      "basis_options": {
+        "degree": 5,
+        "scale": 2.0,
+        "decay": -2.0
+      },
+      "input_options": {
+        "domain": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            6.283185307179586,
+            12.566370614359172
+          ]
+        ]
+      },
+      "coeff_std": 0.1,
+      "base_init": "he_uniform",
+      "decay_in_forward": false
+    },
+    "train": {
+      "stages": [
+        {
+          "optimizer": "soap",
+          "steps": 6000,
+          "lr": 0.003,
+          "options": {}
+        },
+        {
+          "optimizer": "lbfgs",
+          "steps": 4000,
+          "lr": null,
+          "options": {}
+        }
+      ],
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "check_every": 100,
+      "rel_tol": 1e-06,
+      "patience": 5,
+      "restore_best": true,
+      "verbose_every": 500
+    },
+    "problem": {
+      "c": 1.0,
+      "L": 6.283185307179586,
+      "T": 12.566370614359172,
+      "n_grid": 60,
+      "n_eval": 128,
+      "n_ic": 100,
+      "n_bc": 100,
+      "hard_bc": true,
+      "w_bc": 2.0
+    },
+    "wrap": "hard_bc"
+  },
+  "runs": [
+    {
+      "seed": 0,
+      "n_params": 18900,
+      "rel_l2": 7.20331295728535e-05,
+      "max_err": 0.00011289383159085453,
+      "best_loss": 2.2838623316256513e-09,
+      "n_steps": 7401,
+      "train_time": 463.97918954200577,
+      "stage_ends": [
+        3401,
+        7401
+      ],
+      "stop_reasons": [
+        "converged",
+        "max_steps"
+      ]
+    },
+    {
+      "seed": 1,
+      "n_params": 18900,
+      "rel_l2": 0.00010384571565646019,
+      "max_err": 0.00018740880824091866,
+      "best_loss": 4.544093240872049e-09,
+      "n_steps": 7201,
+      "train_time": 467.38561954101897,
+      "stage_ends": [
+        3201,
+        7201
+      ],
+      "stop_reasons": [
+        "converged",
+        "max_steps"
+      ]
+    },
+    {
+      "seed": 2,
+      "n_params": 18900,
+      "rel_l2": 3.741233306237888e-05,
+      "max_err": 6.118880300318152e-05,
+      "best_loss": 2.3167695234195973e-09,
+      "n_steps": 7301,
+      "train_time": 456.285076708009,
+      "stage_ends": [
+        3301,
+        7301
+      ],
+      "stop_reasons": [
+        "converged",
+        "max_steps"
+      ]
+    }
+  ],
+  "created": "2026-10-26T18:06:51",
+  "versions": {
+    "jax": "0.11.1",
+    "flax": "0.12.9",
+    "optax": "0.2.8",
+    "soap-jax": "0.2.2"
+  },
+  "x64": true
+}

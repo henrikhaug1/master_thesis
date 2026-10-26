@@ -42,7 +42,7 @@ INPUT = dict(domain=((0.0, 0.0), (L, T)))
 # Widths give every model about as many parameters as the MLP.
 MODELS = {
     "MLP": MLPConfig((2, 96, 96, 96, 1)),
-    "KANN_spline_same_params": KANNConfig(
+    "KANN_spline": KANNConfig(
         (2, 32, 32, 32, 1),
         basis="bspline",
         basis_options=dict(scale=2.0),

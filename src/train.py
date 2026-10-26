@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass
 
 import flax.nnx as nnx
+import jax
 import jax.numpy as jnp
 import optax
 from soap_jax import soap
@@ -40,7 +41,8 @@ def make_optimizer(stage: Stage) -> optax.GradientTransformationExtraArgs:
     if stage.lr is not None:
         kwargs["learning_rate"] = stage.lr
     # The train step passes value/grad/value_fn, which only L-BFGS uses; this
-    # lets every other optimizer ignore them.
+    # lets every other optimizer ignore them. It leaves the state unchanged,
+    # so value_and_grad_from_state still finds the line search's values.
     return optax.with_extra_args_support(OPTIMIZERS[stage.optimizer](**kwargs))
 
 
@@ -77,27 +79,38 @@ def train(model, loss, cfg: TrainConfig, metric_fn=None) -> TrainResult:
 def _train_stage(model, loss, stage, tx, cfg, metric_fn, log):
     """Up to `stage.steps` steps of one optimizer, appending to `log`.
 
+    The parameters are trained as a plain pytree and written back into `model`
+    only where it is read: before metric_fn and at the end of the stage.
+
     Returns (best checked loss, stop reason).
     """
-    optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
+    graphdef, params, rest = nnx.split(model, nnx.Param, ...)
+    # Raw arrays instead of Param wrappers, which SOAP's tree_map trips over.
+    params = nnx.as_pure(params)
 
-    @nnx.jit
-    def train_step(model, optimizer):
-        graphdef, params, rest = nnx.split(model, nnx.Param, ...)
+    def value_fn(p):
+        return loss(nnx.merge(graphdef, p, rest))
 
-        def value_fn(p):
-            return loss(nnx.merge(graphdef, p, rest))
+    # L-BFGS's line search has already evaluated the loss and gradient at the
+    # point it accepted, which is where the next step starts; reusing them
+    # saves one evaluation per step. Other optimizers keep no such state.
+    if stage.optimizer == "lbfgs":
+        value_and_grad = optax.value_and_grad_from_state(value_fn)
+    else:
+        grad_fn = jax.value_and_grad(value_fn)
 
-        loss_val, grads = nnx.value_and_grad(loss)(model)
-        optimizer.update(
-            model,
-            grads,
-            value=loss_val,
-            grad=nnx.as_pure(nnx.state(grads, nnx.Param)),
-            value_fn=value_fn,
+        def value_and_grad(p, state):
+            return grad_fn(p)
+
+    @jax.jit
+    def train_step(params, opt_state):
+        loss_val, grads = value_and_grad(params, state=opt_state)
+        updates, opt_state = tx.update(
+            grads, opt_state, params, value=loss_val, grad=grads, value_fn=value_fn
         )
-        return loss_val
+        return optax.apply_updates(params, updates), opt_state, loss_val
 
+    opt_state = tx.init(params)
     offset = len(log["loss"])
     best_loss, best_params = float("inf"), None
     ref, stagnant, stop_reason = float("inf"), 0, "max_steps"
@@ -106,16 +119,14 @@ def _train_stage(model, loss, stage, tx, cfg, metric_fn, log):
         checking = i % cfg.check_every == 0
         if checking:
             # Snapshot before the step: the loss it returns belongs to these.
-            params = (
-                nnx.to_pure_dict(nnx.state(model, nnx.Param))
-                if cfg.restore_best
-                else None
-            )
+            # The arrays are immutable, so keeping a reference is enough.
+            snapshot = params if cfg.restore_best else None
             if metric_fn is not None:
+                nnx.update(model, params)
                 log["metric_steps"].append(offset + i)
                 log["metric"].append(float(metric_fn(model)))
 
-        loss_val = train_step(model, optimizer)
+        params, opt_state, loss_val = train_step(params, opt_state)
         log["loss"].append(loss_val)
         if not checking:
             continue
@@ -126,7 +137,7 @@ def _train_stage(model, loss, stage, tx, cfg, metric_fn, log):
 
         l = float(loss_val)
         if l < best_loss:
-            best_loss, best_params = l, params
+            best_loss, best_params = l, snapshot
 
         stagnant = 0 if best_loss < ref * (1 - cfg.rel_tol) else stagnant + 1
         ref = best_loss
@@ -137,9 +148,5 @@ def _train_stage(model, loss, stage, tx, cfg, metric_fn, log):
         if cfg.verbose_every and i % cfg.verbose_every == 0:
             print(f"{stage.optimizer:<5} step {i:5d} | loss {l:.6e}")
 
-    if best_params is not None:
-        state = nnx.state(model, nnx.Param)
-        nnx.replace_by_pure_dict(state, best_params)
-        nnx.update(model, state)
-
+    nnx.update(model, params if best_params is None else best_params)
     return best_loss, stop_reason

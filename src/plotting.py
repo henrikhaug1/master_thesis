@@ -73,12 +73,18 @@ def plot_field(
     filename: str,
     cmap: str = "RdBu_r",
     cbar_label: str = "u",
+    aspect: str = "auto",
 ):
-    """Heatmap of a 2-D field U on the grid (X, Y). All three are (Nx, Ny)."""
-    plt.figure(figsize=(7, 4))
+    """Heatmap of a 2-D field U on the grid (X, Y). All three are (Nx, Ny).
+
+    aspect="equal" draws x and y to the same scale, for spatial domains; the
+    default stretches the field to fill the figure, which suits an (x, t) plot.
+    """
+    plt.figure(figsize=(5.5, 4.5) if aspect == "equal" else (7, 4))
     mesh = plt.pcolormesh(
         jnp.asarray(X), jnp.asarray(Y), jnp.asarray(U), shading="auto", cmap=cmap
     )
+    plt.gca().set_aspect(aspect)
     plt.colorbar(mesh, label=cbar_label)
     plt.xlabel(x_label)
     plt.ylabel(y_label)
@@ -98,11 +104,12 @@ def plot_fields(
     title: str,
     fig_dir,
     cbar_label: str = "u",
+    aspect: str = "auto",
 ):
     """One PDF each for the exact field, every model's field and its absolute error.
 
     Files are named <title>_field_<name>.pdf and <title>_error_<name>.pdf, with
-    spaces in the title as underscores.
+    spaces in the title as underscores. `aspect` as in plot_field.
     """
     slug = title.replace(" ", "_")
     for name, U in [("exact", U_exact), *fields.items()]:
@@ -115,6 +122,7 @@ def plot_fields(
             f"{title} - {name}",
             f"{fig_dir}/{slug}_field_{name}.pdf",
             cbar_label=cbar_label,
+            aspect=aspect,
         )
     for name, U in fields.items():
         plot_field(
@@ -127,6 +135,7 @@ def plot_fields(
             f"{fig_dir}/{slug}_error_{name}.pdf",
             cmap="magma",
             cbar_label="abs. error",
+            aspect=aspect,
         )
 
 

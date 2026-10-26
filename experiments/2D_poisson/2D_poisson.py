@@ -164,7 +164,18 @@ def main():
         str(figs / f"{TITLE.replace(' ', '_')}_slice.pdf"),
     )
 
-    plot_fields(X, Y, U_exact, fields, "x", "y", TITLE, figs, cbar_label="u(x,y)")
+    plot_fields(
+        X,
+        Y,
+        U_exact,
+        fields,
+        "x",
+        "y",
+        TITLE,
+        figs,
+        cbar_label="u(x,y)",
+        aspect="equal",
+    )
 
 
 if __name__ == "__main__":

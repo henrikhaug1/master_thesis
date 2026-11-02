@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import ufl
-from dolfinx import fem, geometry
+from dolfinx import fem, geometry, mesh
 from mpi4py import MPI
 
 
@@ -67,6 +67,37 @@ def rel_l2_error(uh: fem.Function, u_exact: ufl.core.expr.Expr) -> float:
     msh = uh.function_space.mesh
     norm = fem.assemble_scalar(fem.form(ufl.inner(u_exact, u_exact) * ufl.dx))
     return l2_error(uh, u_exact) / float(np.sqrt(msh.comm.allreduce(norm, op=MPI.SUM)))
+
+
+def residual_estimator(uh: fem.Function, f=0.0) -> np.ndarray:
+    """Residual error estimate per cell for -Laplace u = f, as eta_K^2:
+
+        h_K^2 ||f + Laplace u_h||_K^2 + sum over interior edges of h/2 ||[du_h/dn]||^2
+
+    The Laplacian of u_h is zero for P1, leaving only f in the cell term.
+    avg(w) hands each cell half of every edge it shares.
+    """
+    msh = uh.function_space.mesh
+    W = fem.functionspace(msh, ("DG", 0))
+    w = ufl.TestFunction(W)
+    h = ufl.CellDiameter(msh)
+    n = ufl.FacetNormal(msh)
+    eta2 = (
+        h**2 * (f + ufl.div(ufl.grad(uh))) ** 2 * w * ufl.dx
+        + ufl.avg(h) * ufl.jump(ufl.grad(uh), n) ** 2 * ufl.avg(w) * ufl.dS
+    )
+    return fem.assemble_vector(fem.form(eta2)).array
+
+
+def doerfler_edges(msh: mesh.Mesh, eta2: np.ndarray, fraction: float) -> np.ndarray:
+    """Edges of the fewest cells whose estimates sum to `fraction` of the total,
+    for mesh.refine."""
+    order = np.argsort(eta2)[::-1]
+    n_marked = np.searchsorted(np.cumsum(eta2[order]), fraction * eta2.sum()) + 1
+    msh.topology.create_connectivity(2, 1)
+    return np.unique(
+        mesh.compute_incident_entities(msh.topology, order[:n_marked], 2, 1)
+    )
 
 
 def n_dofs(V: fem.FunctionSpace) -> int:

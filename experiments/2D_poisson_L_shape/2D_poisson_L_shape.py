@@ -7,10 +7,20 @@ if str(REPO_ROOT) not in sys.path:
 
 import jax.numpy as jnp
 
-from src.config import KANNConfig, MLPConfig, Stage, TrainConfig
+from src.config import (
+    GradedCollocation,  # noqa: F401 -- the alternatives for COLLOCATION
+    GridCollocation,
+    KANNConfig,
+    MLPConfig,
+    RADCollocation,
+    RandomCollocation,  # noqa: F401
+    Stage,
+    TrainConfig,
+)
 from src.experiment import compare_models, median_prediction
-from src.loss import loss_fn
+from src.loss import dirichlet_loss, loss_fn
 from src.plotting import plot_fields, plot_solution_grid
+from src.sampling import Domain, segment_points
 from src.utils import derivatives, laplacian
 
 OUT_DIR = Path(__file__).parent
@@ -20,10 +30,19 @@ pi = jnp.pi
 # ---------- Settings ----------
 X_MIN, X_MAX = -1.0, 1.0
 Y_MIN, Y_MAX = -1.0, 1.0
-N_GRID = 64  # collocation grid is N_GRID x N_GRID minus the cut-out wedge
-N_EVAL = 128  # error grid, likewise; it shares only the square's corners with N_GRID
+# Interior points (see src.config). The 64 x 64 grid minus the cut-out wedge is
+# the baseline; the alternatives, at about as many points as it has at 270 degrees:
+#   GradedCollocation(n_r=48, n_theta=64, beta=2.0), packed toward the corner;
+#       weighted=False lets the corner points dominate the loss
+#   RandomCollocation(n=3072, seed=0)
+#   RADCollocation(n=3072), redrawn toward large residuals during SOAP
+COLLOCATION = GridCollocation(n=64)
+N_EVAL = 128  # error grid, likewise; it shares only the square's corners with the grid
 BC_DENSITY = 75  # boundary points per unit length; about 600 points at 270 degrees
-OMEGA_DEG = 200  # interior angle at the corner, 180 <= OMEGA_DEG <= 360; 270 is the L
+# Grading of the boundary points on the two edges that meet at the corner, as
+# in segment_points: 1 spaces them evenly, 2 packs as many toward the corner.
+BC_BETA = 1.0
+OMEGA_DEG = 360  # interior angle at the corner, 180 <= OMEGA_DEG <= 360; 270 is the L
 
 TRAIN = TrainConfig(
     stages=(Stage("soap", 6000, lr=1e-3), Stage("lbfgs", 4000)),
@@ -45,7 +64,9 @@ MODELS = {
 # ---------- Problem ----------
 def polar(x, y):
     """r and theta, with theta in [0, 2 pi) measured from the positive x-axis."""
-    return jnp.sqrt(x**2 + y**2), jnp.mod(jnp.arctan2(y, x), 2 * pi)
+    r = jnp.sqrt(x**2 + y**2)
+    theta = jnp.mod(jnp.arctan2(y, x), 2 * pi)
+    return r, theta
 
 
 def in_domain(x, y, omega):
@@ -64,21 +85,9 @@ def residual(model, pts):
     return -laplacian(H)
 
 
-def bc_fn(model, bc_pts, bc_vals):
-    u = model(bc_pts)[:, 0]
-    return jnp.mean((u - bc_vals) ** 2)
-
-
-def segment(p0, p1, density, endpoint=True):
-    """Points from p0 to p1, spaced by length so every edge has the same density."""
-    p0, p1 = jnp.asarray(p0), jnp.asarray(p1)
-    n = max(2, round(float(jnp.linalg.norm(p1 - p0)) * density))
-    s = jnp.linspace(0.0, 1.0, n, endpoint=endpoint)[:, None]
-    return (1.0 - s) * p0 + s * p1
-
-
-def boundary_points(omega, density):
-    """The outer square where theta <= omega, plus the two edges meeting at the corner."""
+def boundary_points(omega, density, beta=1.0):
+    """The outer square where theta <= omega, plus the two edges meeting at the
+    corner, whose points are packed toward it for beta > 1."""
     corners = [
         (X_MAX, Y_MIN),
         (X_MAX, Y_MAX),
@@ -88,33 +97,62 @@ def boundary_points(omega, density):
     ]
     # endpoint=False so each corner of the square appears once, not twice
     outer = jnp.concatenate(
-        [segment(a, b, density, endpoint=False) for a, b in zip(corners, corners[1:])]
+        [
+            segment_points(a, b, density=density, endpoint=False)
+            for a, b in zip(corners, corners[1:])
+        ]
     )
     # Strict inequalities leave the points where the two corner edges meet the
     # square to those edges, so no point is counted twice.
     _, theta = polar(outer[:, 0], outer[:, 1])
     outer = outer[(theta > 1e-6) & (theta < omega - 1e-6)]
 
-    # The theta = omega edge runs from where it meets the square back to the
-    # corner, leaving out the corner itself, which edge_0 already contains.
+    # Both edges run out from the corner, so the grading packs toward it. The
+    # theta = omega edge drops the corner itself, which edge_0 contains, so it
+    # gets one point more; for beta = 1 its points are the evenly spaced ones
+    # from before the grading existed.
     c, s = float(jnp.cos(omega)), float(jnp.sin(omega))
     exit_r = 1.0 / max(abs(c), abs(s))
-    edge_0 = segment((0.0, 0.0), (X_MAX, 0.0), density)
-    edge_omega = segment((exit_r * c, exit_r * s), (0.0, 0.0), density, endpoint=False)
+    edge_0 = segment_points((0.0, 0.0), (X_MAX, 0.0), density=density, beta=beta)
+    edge_omega = segment_points(
+        (0.0, 0.0),
+        (exit_r * c, exit_r * s),
+        n=max(2, round(exit_r * density)) + 1,
+        beta=beta,
+    )[1:]
     return jnp.concatenate([outer, edge_0, edge_omega])
+
+
+def square_radius(theta):
+    """Distance from the corner to the edge of the square along angle theta."""
+    return 1.0 / jnp.maximum(jnp.abs(jnp.cos(theta)), jnp.abs(jnp.sin(theta)))
+
+
+def domain(omega):
+    """The square minus the wedge theta > omega, seen in polar coordinates from
+    the corner for graded points."""
+    return Domain(
+        lo=(X_MIN, Y_MIN),
+        hi=(X_MAX, Y_MAX),
+        inside=lambda x, y: in_domain(x, y, omega),
+        center=(0.0, 0.0),
+        theta_range=(0.0, omega),
+        r_max_fn=square_radius,
+    )
 
 
 def main():
     omega = OMEGA_DEG * pi / 180
     title = f"{TITLE} omega {OMEGA_DEG}"
 
-    X_c, Y_c = jnp.meshgrid(
-        jnp.linspace(X_MIN, X_MAX, N_GRID),
-        jnp.linspace(Y_MIN, Y_MAX, N_GRID),
-        indexing="ij",
+    # Graded points come with the area each one stands for, so the residual
+    # loss stays an integral over the domain rather than leaning on the corner.
+    pts, weights = COLLOCATION.points(domain(omega))
+    resampler = (
+        COLLOCATION.resampler(domain(omega), residual)
+        if isinstance(COLLOCATION, RADCollocation)
+        else None
     )
-    inside = in_domain(X_c, Y_c, omega)
-    pts = jnp.stack([X_c[inside], Y_c[inside]], axis=-1)
 
     xg = jnp.linspace(X_MIN, X_MAX, N_EVAL)
     yg = jnp.linspace(Y_MIN, Y_MAX, N_EVAL)
@@ -122,27 +160,42 @@ def main():
     mask = in_domain(X, Y, omega)
     eval_pts = jnp.stack([X[mask], Y[mask]], axis=-1)
 
-    bc_pts = boundary_points(omega, BC_DENSITY)
+    bc_pts = boundary_points(omega, BC_DENSITY, BC_BETA)
     bc_vals = exact_solution(bc_pts[:, 0], bc_pts[:, 1], omega)
     print(
         f"omega = {OMEGA_DEG} deg, lambda = {float(pi / omega):.3f}, "
-        f"{pts.shape[0]} interior and {bc_pts.shape[0]} boundary points"
+        f"{pts.shape[0]} interior ({COLLOCATION}) and {bc_pts.shape[0]} boundary points"
+    )
+
+    # The strategy's and the boundary grading's tags ahead of "omega" keep
+    # other runs out of plot_omega.py's f"{RUNS[...]}-omega*", and out of the
+    # baseline runs' folders; evenly spaced boundary points have no tag.
+    bc_tag = "" if BC_BETA == 1 else f"bcb{BC_BETA:g}"
+    run_name = "-".join(
+        filter(None, (TRAIN.name, COLLOCATION.tag, bc_tag, f"omega{OMEGA_DEG}"))
     )
 
     results, run_dir = compare_models(
         MODELS,
         TRAIN,
-        loss=lambda model: loss_fn(
-            model, pts, residual, bc_fn=lambda m: bc_fn(m, bc_pts, bc_vals)
+        # A resampler passes the current points; otherwise they stay `pts`.
+        loss=lambda model, pts=pts: loss_fn(
+            model,
+            pts,
+            residual,
+            bc_fn=lambda m: dirichlet_loss(m, bc_pts, bc_vals),
+            weights=weights,
         ),
         predict_fn=lambda model: model(eval_pts)[:, 0],
         u_exact=exact_solution(eval_pts[:, 0], eval_pts[:, 1], omega),
         out_dir=OUT_DIR,
         title=title,
         problem=dict(
-            omega_deg=OMEGA_DEG, n_grid=N_GRID, n_eval=N_EVAL, bc_density=BC_DENSITY
+            omega_deg=OMEGA_DEG, n_eval=N_EVAL, bc_density=BC_DENSITY, bc_beta=BC_BETA
         ),
-        run_name=f"{TRAIN.name}-omega{OMEGA_DEG}",
+        collocation=COLLOCATION,
+        resampler=resampler,
+        run_name=run_name,
     )
 
     # ---------- Plotting ----------

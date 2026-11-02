@@ -1,7 +1,8 @@
-"""Error against the corner angle omega, over every finished L-shape run. Reads
-saved results only, so nothing is retrained.
+"""Error against the corner angle omega, over every finished L-shape run, with
+each set of collocation points in RUNS on the same axes. Reads saved results
+only, so nothing is retrained.
 
-Run 2D_poisson_L_shape.py once per OMEGA_DEG first, then:
+Run 2D_poisson_L_shape.py once per OMEGA_DEG and COLLOCATION first, then:
 
     uv run experiments/2D_poisson_L_shape/plot_omega.py
 """
@@ -23,7 +24,14 @@ from src.metrics import rel_l2_error
 
 OUT_DIR = Path(__file__).parent
 TITLE = "2D Laplace corner"
-RUN = "soap6000-lbfgs4000"  # run folders are named f"{RUN}-omega{OMEGA_DEG}"
+# Run folders are named f"{RUNS[label]}-omega{OMEGA_DEG}". The first entry is
+# the baseline the others are compared with in the ratio table.
+RUNS = {
+    "grid": "soap6000-lbfgs4000",
+    "graded": "soap6000-lbfgs4000-graded-b2",
+    "graded + bc": "soap6000-lbfgs4000-graded-b2-bcb2",
+}
+LINESTYLES = ("-", "--", ":", "-.")  # one per entry of RUNS
 R_CORNER = (
     0.1  # the corner error is measured on the evaluation points with r < R_CORNER
 )
@@ -49,10 +57,11 @@ def eval_points(problem, omega_deg, n_eval):
     return jnp.stack([X[mask], Y[mask]], axis=-1)
 
 
-def collect(problem):
-    """{model: {omega_deg: metrics}}, each metric an array with one entry per seed."""
+def collect(problem, run):
+    """{model: {omega_deg: metrics}} over the run folders named f"{run}-omega*",
+    each metric an array with one entry per seed."""
     table = {}
-    for run_dir in OUT_DIR.glob(f"runs/{RUN}-omega*"):
+    for run_dir in OUT_DIR.glob(f"runs/{run}-omega*"):
         results = load_results(run_dir)
         if not results:
             continue  # a run still in progress has no results yet
@@ -83,24 +92,35 @@ def _degrees_to_lambda(v):
     return 180 / jnp.maximum(jnp.asarray(v, dtype=float), 1e-9)
 
 
-def plot(table, filename):
-    """Global and corner error against omega: median over seeds, every seed as a dot."""
+def plot(tables, filename):
+    """Global and corner error against omega: median over seeds, every seed as a
+    dot. One colour per model, one line style per set of collocation points."""
     panels = (
         ("rel_l2", "rel. L2 error"),
         ("corner_rel_l2", f"rel. L2 error, r < {R_CORNER}"),
     )
+    models = sorted({m for table in tables.values() for m in table})
+    cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    colors = {m: cycle[i % len(cycle)] for i, m in enumerate(models)}
+
     fig, axes = plt.subplots(1, len(panels), figsize=(11, 4.2))
     for ax, (key, label) in zip(axes, panels):
-        for model, by_omega in table.items():
-            omegas = jnp.array(list(by_omega))
-            values = [m[key] for m in by_omega.values()]
-            (line,) = ax.plot(
-                omegas, [jnp.median(v) for v in values], marker="o", label=model
-            )
-            for w, v in zip(omegas, values):
-                ax.scatter(
-                    jnp.full(v.shape, w), v, s=12, alpha=0.4, color=line.get_color()
+        for (points, table), style in zip(tables.items(), LINESTYLES):
+            for model, by_omega in table.items():
+                omegas = jnp.array(list(by_omega))
+                values = [m[key] for m in by_omega.values()]
+                ax.plot(
+                    omegas,
+                    [jnp.median(v) for v in values],
+                    marker="o",
+                    linestyle=style,
+                    color=colors[model],
+                    label=f"{model} ({points})",
                 )
+                for w, v in zip(omegas, values):
+                    ax.scatter(
+                        jnp.full(v.shape, w), v, s=12, alpha=0.4, color=colors[model]
+                    )
         ax.set_xlabel("omega [deg]")
         ax.set_ylabel(label)
         ax.set_yscale("log")
@@ -145,14 +165,58 @@ def summary(table) -> str:
     return "\n".join(rows)
 
 
+def ratio_summary(tables) -> str:
+    """Each set of points against the first in RUNS, per omega and model: the
+    errors of both and their ratio; below 1 means the other set did better."""
+    (base, base_table), *others = tables.items()
+    blocks = []
+    for points, table in others:
+        # Columns wide enough for the labels, which name the sets of points.
+        wb = max(16, len(base) + 9)
+        wo = max(18, len(points) + 9)
+        header = (
+            f"{'omega':>6}  {'model':<20}"
+            f"{'rel L2 ' + base:>{wb}}{'rel L2 ' + points:>{wo}}{'ratio':>8}"
+            f"{'corner ' + base:>{wb}}{'corner ' + points:>{wo}}{'ratio':>8}"
+        )
+        rows = [f"{points} / {base}", header, "-" * len(header)]
+        omegas = sorted(
+            {w for m in table.values() for w in m}
+            & {w for m in base_table.values() for w in m}
+        )
+        for w in omegas:
+            for model in sorted(table):
+                if w not in table[model] or w not in base_table.get(model, {}):
+                    continue
+                # Means for the global error and medians for the corner error,
+                # as in summary().
+                rel_b = jnp.mean(base_table[model][w]["rel_l2"])
+                rel_o = jnp.mean(table[model][w]["rel_l2"])
+                cor_b = jnp.median(base_table[model][w]["corner_rel_l2"])
+                cor_o = jnp.median(table[model][w]["corner_rel_l2"])
+                rows.append(
+                    f"{w:>6}  {model:<20}"
+                    f"{rel_b:>{wb}.3e}{rel_o:>{wo}.3e}{rel_o / rel_b:>8.2f}"
+                    f"{cor_b:>{wb}.3e}{cor_o:>{wo}.3e}{cor_o / cor_b:>8.2f}"
+                )
+            rows.append("")
+        blocks.append("\n".join(rows))
+    return "\n".join(blocks)
+
+
 def main():
-    table = collect(load_problem())
+    problem = load_problem()
+    tables = {points: collect(problem, run) for points, run in RUNS.items()}
+    tables = {points: table for points, table in tables.items() if table}
     figs = OUT_DIR / "figs"
     figs.mkdir(exist_ok=True)
     slug = TITLE.replace(" ", "_")
 
-    plot(table, str(figs / f"{slug}_omega_sweep.pdf"))
-    text = summary(table)
+    plot(tables, str(figs / f"{slug}_omega_sweep.pdf"))
+    sections = [f"== {points} ({RUNS[points]})\n{summary(t)}" for points, t in tables.items()]
+    if len(tables) > 1:
+        sections.append(f"== ratios\n{ratio_summary(tables)}")
+    text = "\n\n".join(sections)
     print(text)
     (figs / f"{slug}_omega_sweep.txt").write_text(text + "\n")
 

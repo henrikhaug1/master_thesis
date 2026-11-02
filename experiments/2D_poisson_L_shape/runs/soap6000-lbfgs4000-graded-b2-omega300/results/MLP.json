@@ -1,0 +1,113 @@
+{
+  "settings": {
+    "model": {
+      "type": "MLPConfig",
+      "widths": [
+        2,
+        96,
+        96,
+        96,
+        1
+      ],
+      "activation": "silu",
+      "init": "lecun_normal"
+    },
+    "train": {
+      "stages": [
+        {
+          "optimizer": "soap",
+          "steps": 6000,
+          "lr": 0.001,
+          "options": {}
+        },
+        {
+          "optimizer": "lbfgs",
+          "steps": 4000,
+          "lr": null,
+          "options": {}
+        }
+      ],
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "check_every": 100,
+      "rel_tol": 1e-06,
+      "patience": 5,
+      "restore_best": true,
+      "verbose_every": 500
+    },
+    "problem": {
+      "omega_deg": 300,
+      "n_eval": 128,
+      "bc_density": 75,
+      "collocation": "graded",
+      "n_r": 48,
+      "n_theta": 64,
+      "beta": 2.0
+    },
+    "wrap": null
+  },
+  "runs": [
+    {
+      "seed": 0,
+      "n_params": 19009,
+      "rel_l2": 0.016061827024581497,
+      "max_err": 0.13039824849058518,
+      "best_loss": 0.00038715874127624587,
+      "n_steps": 10000,
+      "train_time": 238.9959205419873,
+      "stage_ends": [
+        6000,
+        10000
+      ],
+      "stop_reasons": [
+        "max_steps",
+        "max_steps"
+      ]
+    },
+    {
+      "seed": 1,
+      "n_params": 19009,
+      "rel_l2": 0.01545220866771333,
+      "max_err": 0.12767747941012703,
+      "best_loss": 0.0003653652177859951,
+      "n_steps": 10000,
+      "train_time": 238.01884670899017,
+      "stage_ends": [
+        6000,
+        10000
+      ],
+      "stop_reasons": [
+        "max_steps",
+        "max_steps"
+      ]
+    },
+    {
+      "seed": 2,
+      "n_params": 19009,
+      "rel_l2": 0.016042643419904835,
+      "max_err": 0.13074597494332896,
+      "best_loss": 0.00039343173606875545,
+      "n_steps": 10000,
+      "train_time": 237.59972483300953,
+      "stage_ends": [
+        6000,
+        10000
+      ],
+      "stop_reasons": [
+        "max_steps",
+        "max_steps"
+      ]
+    }
+  ],
+  "created": "2026-10-28T16:32:55",
+  "versions": {
+    "jax": "0.11.1",
+    "flax": "0.12.9",
+    "optax": "0.2.8",
+    "soap-jax": "0.2.2"
+  },
+  "x64": true
+}

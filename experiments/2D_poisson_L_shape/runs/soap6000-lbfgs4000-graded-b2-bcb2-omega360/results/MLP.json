@@ -1,0 +1,118 @@
+{
+  "settings": {
+    "model": {
+      "type": "MLPConfig",
+      "widths": [
+        2,
+        96,
+        96,
+        96,
+        1
+      ],
+      "activation": "silu",
+      "init": "lecun_normal"
+    },
+    "train": {
+      "stages": [
+        {
+          "optimizer": "soap",
+          "steps": 6000,
+          "lr": 0.001,
+          "options": {}
+        },
+        {
+          "optimizer": "lbfgs",
+          "steps": 4000,
+          "lr": null,
+          "options": {}
+        }
+      ],
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "check_every": 100,
+      "rel_tol": 1e-06,
+      "patience": 5,
+      "restore_best": true,
+      "verbose_every": 500
+    },
+    "problem": {
+      "omega_deg": 360,
+      "n_eval": 128,
+      "bc_density": 75,
+      "bc_beta": 2.0
+    },
+    "collocation": {
+      "type": "GradedCollocation",
+      "n_r": 48,
+      "n_theta": 64,
+      "beta": 2.0,
+      "s_min": 0.0,
+      "weighted": true
+    },
+    "wrap": null
+  },
+  "runs": [
+    {
+      "seed": 0,
+      "n_params": 19009,
+      "rel_l2": 0.17280578550718173,
+      "max_err": 0.49962799195407265,
+      "best_loss": 0.04040268871850981,
+      "n_steps": 4902,
+      "train_time": 117.43277158300043,
+      "stage_ends": [
+        4301,
+        4902
+      ],
+      "stop_reasons": [
+        "converged",
+        "converged"
+      ]
+    },
+    {
+      "seed": 1,
+      "n_params": 19009,
+      "rel_l2": 0.17280584855671685,
+      "max_err": 0.49962551119840987,
+      "best_loss": 0.040402503597245135,
+      "n_steps": 6601,
+      "train_time": 156.96947866600385,
+      "stage_ends": [
+        6000,
+        6601
+      ],
+      "stop_reasons": [
+        "max_steps",
+        "converged"
+      ]
+    },
+    {
+      "seed": 2,
+      "n_params": 19009,
+      "rel_l2": 0.17280527957951955,
+      "max_err": 0.4996260301193276,
+      "best_loss": 0.04040255729780423,
+      "n_steps": 5202,
+      "train_time": 127.17917533299624,
+      "stage_ends": [
+        4601,
+        5202
+      ],
+      "stop_reasons": [
+        "converged",
+        "converged"
+      ]
+    }
+  ],
+  "created": "2026-11-02T15:05:06",
+  "versions": {
+    "jax": "0.11.1",
+    "flax": "0.12.9",
+    "optax": "0.2.8",
+    "soap-jax": "0.2.2"
+  },
+  "x64": true
+}

@@ -1,0 +1,31 @@
+dofs for each FEM method to reach the network's median rel. L2 error
+
+ omega  model                             params     rel L2   P1_uniform   P2_uniform  P1_adaptive  P2_adaptive
+---------------------------------------------------------------------------------------------------------------
+   180  KANN_cheb_decay (grid)             18900  1.313e-05            8           23            8           23
+   180  MLP (grid)                         19009  5.575e-06            8           23            8           23
+   180  KANN_cheb_decay (graded + bc)      18900  1.577e-05            8           23            8           23
+   180  MLP (graded + bc)                  19009  2.503e-06            8           23            8           23
+   200  KANN_cheb_decay (grid)             18900  8.055e-04          184           93          114           61
+   200  MLP (grid)                         19009  6.495e-04          231          116          142           74
+   200  KANN_cheb_decay (graded + bc)      18900  8.202e-04          180           90          112           60
+   200  MLP (graded + bc)                  19009  8.252e-04          179           90          111           60
+   225  KANN_cheb_decay (grid)             18900  1.467e-03          333          138          139           62
+   225  MLP (grid)                         19009  1.998e-03          225           98          110           53
+   225  KANN_cheb_decay (graded + bc)      18900  1.184e-03          439          176          164           69
+   225  MLP (graded + bc)                  19009  1.957e-03          231          101          111           53
+   270  KANN_cheb_decay (grid)             18900  3.396e-03          555          242          123           84
+   270  MLP (grid)                         19009  6.742e-03          204          100           60           57
+   270  KANN_cheb_decay (graded + bc)      18900  2.440e-03          913          374          164          101
+   270  MLP (graded + bc)                  19009  5.925e-03          246          117           69           61
+   300  KANN_cheb_decay (grid)             18900  5.469e-03          665          289          110          108
+   300  MLP (grid)                         19009  1.407e-02          145           77           53           56
+   300  KANN_cheb_decay (graded + bc)      18900  4.481e-03          924          387          132          118
+   300  MLP (graded + bc)                  19009  1.136e-02          205          102           61           66
+   360  KANN_cheb_decay (grid)             18900  1.829e-01           14           43           14           43
+   360  MLP (grid)                         19009  1.829e-01           14           43           14           43
+   360  KANN_cheb_decay (graded + bc)      18900  1.728e-01           14           43           14           43
+   360  MLP (graded + bc)                  19009  1.728e-01           14           43           14           43
+
+-: the method never reached that error within its sweep.
+A value equal to the first level's dofs means the coarsest mesh already did.

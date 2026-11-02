@@ -10,11 +10,12 @@ if str(REPO_ROOT) not in sys.path:
 
 import jax.numpy as jnp
 
-from src.config import KANNConfig, MLPConfig, Stage, TrainConfig
+from src.config import GridCollocation, KANNConfig, MLPConfig, Stage, TrainConfig
 from src.experiment import compare_models, median_prediction
-from src.loss import loss_fn
+from src.loss import dirichlet_loss, loss_fn
 from src.pinns import HardConstraint
 from src.plotting import plot_fields, plot_solution_grid
+from src.sampling import Domain, segment_points
 from src.utils import derivatives, laplacian
 
 OUT_DIR = Path(__file__).parent
@@ -24,8 +25,8 @@ pi = jnp.pi
 # ---------- Settings ----------
 X_MIN, X_MAX = 0.0, 1.0
 Y_MIN, Y_MAX = 0.0, 1.0
-N_GRID = 64  # collocation grid is N_GRID x N_GRID
-N_EVAL = 128  # error grid is N_EVAL x N_EVAL; it shares only the corners with N_GRID
+COLLOCATION = GridCollocation(n=64)  # interior points; see src.config for others
+N_EVAL = 128  # error grid is N_EVAL x N_EVAL; it shares only the corners with the grid
 N_BC = 100  # points per edge, used only when HARD_BC is False
 HARD_BC = True  # impose u = 0 on the boundary exactly instead of as a loss term
 
@@ -71,11 +72,6 @@ def residual(model, pts):
     return -laplacian(H) - f(pts[:, 0], pts[:, 1])
 
 
-def bc_fn(model, bc_pts):
-    u = model(bc_pts)[:, 0]
-    return jnp.mean(u**2)
-
-
 def hard_bc(net):
     """u = phi(x,y) * N(x,y) with phi = 0 on all four edges, so u = 0 there exactly."""
     lx, ly = X_MAX - X_MIN, Y_MAX - Y_MIN
@@ -96,12 +92,7 @@ def hard_bc(net):
 
 
 def main():
-    X_c, Y_c = jnp.meshgrid(
-        jnp.linspace(X_MIN, X_MAX, N_GRID),
-        jnp.linspace(Y_MIN, Y_MAX, N_GRID),
-        indexing="ij",
-    )
-    pts = jnp.stack([X_c.ravel(), Y_c.ravel()], axis=-1)
+    pts, weights = COLLOCATION.points(Domain((X_MIN, Y_MIN), (X_MAX, Y_MAX)))
 
     xg = jnp.linspace(X_MIN, X_MAX, N_EVAL)
     yg = jnp.linspace(Y_MIN, Y_MAX, N_EVAL)
@@ -109,21 +100,25 @@ def main():
     eval_pts = jnp.stack([X.ravel(), Y.ravel()], axis=-1)
 
     # The four edges, used only when the BC is imposed softly.
-    xb = jnp.linspace(X_MIN, X_MAX, N_BC)
-    yb = jnp.linspace(Y_MIN, Y_MAX, N_BC)
     bc_pts = jnp.concatenate(
         [
-            jnp.stack([xb, jnp.full_like(xb, Y_MIN)], axis=-1),
-            jnp.stack([xb, jnp.full_like(xb, Y_MAX)], axis=-1),
-            jnp.stack([jnp.full_like(yb, X_MIN), yb], axis=-1),
-            jnp.stack([jnp.full_like(yb, X_MAX), yb], axis=-1),
+            segment_points((X_MIN, Y_MIN), (X_MAX, Y_MIN), N_BC),
+            segment_points((X_MIN, Y_MAX), (X_MAX, Y_MAX), N_BC),
+            segment_points((X_MIN, Y_MIN), (X_MIN, Y_MAX), N_BC),
+            segment_points((X_MAX, Y_MIN), (X_MAX, Y_MAX), N_BC),
         ]
     )
 
     def loss(model):
         if HARD_BC:
-            return loss_fn(model, pts, residual, hard_constraints=True)
-        return loss_fn(model, pts, residual, bc_fn=lambda m: bc_fn(m, bc_pts))
+            return loss_fn(model, pts, residual, hard_constraints=True, weights=weights)
+        return loss_fn(
+            model,
+            pts,
+            residual,
+            bc_fn=lambda m: dirichlet_loss(m, bc_pts),
+            weights=weights,
+        )
 
     U_exact = exact_solution(X, Y)
     results, run_dir = compare_models(
@@ -136,11 +131,11 @@ def main():
         title=TITLE,
         problem=dict(
             domain=((X_MIN, Y_MIN), (X_MAX, Y_MAX)),
-            n_grid=N_GRID,
             n_eval=N_EVAL,
             n_bc=N_BC,
             hard_bc=HARD_BC,
         ),
+        collocation=COLLOCATION,
         wrap=hard_bc if HARD_BC else None,
     )
 

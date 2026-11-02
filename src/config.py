@@ -15,6 +15,14 @@ jax.config.update("jax_enable_x64", True)
 
 from src.bases import BSplineBasis, ChebyshevBasis  # noqa: E402 -- after the x64 switch
 from src.pinns import KANN, MLP  # noqa: E402
+from src.sampling import (  # noqa: E402
+    Domain,
+    Resampler,
+    graded_points,
+    grid_points,
+    random_points,
+    residual_density_points,
+)
 
 ACTIVATIONS = {
     "silu": nnx.silu,
@@ -88,6 +96,138 @@ class TrainConfig:
     def name(self) -> str:
         """Default run-folder name, e.g. "soap6000-lbfgs4000"."""
         return "-".join(f"{s.optimizer}{s.steps}" for s in self.stages)
+
+
+# ---------- Collocation ----------
+# Each strategy places the interior points for a src.sampling.Domain:
+# points(domain) returns them with their loss weights (None weighs them all
+# equally), and tag names the strategy in run folders. RADCollocation also
+# moves its points during training, through resampler().
+
+
+@dataclass(frozen=True)
+class GridCollocation:
+    """An evenly spaced grid of n points per axis over the domain's box, keeping
+    those inside the domain. The baseline, so its tag is empty: run folders
+    from before the strategies existed all used it."""
+
+    n: int
+
+    @property
+    def tag(self) -> str:
+        return ""
+
+    def points(self, domain: Domain):
+        return grid_points(domain.lo, domain.hi, self.n, domain.inside), None
+
+
+@dataclass(frozen=True)
+class RandomCollocation:
+    """n points drawn uniformly at random inside the domain, from `seed`.
+
+    The seed is separate from the training seeds, so every model and seed
+    trains on the same points.
+    """
+
+    n: int
+    seed: int = 0
+
+    @property
+    def tag(self) -> str:
+        return f"random-s{self.seed}"
+
+    def points(self, domain: Domain):
+        key = jax.random.key(self.seed)
+        return random_points(domain.lo, domain.hi, self.n, key, domain.inside), None
+
+
+@dataclass(frozen=True)
+class GradedCollocation:
+    """n_r x n_theta points graded toward domain.center (see graded_points),
+    weighted by the area each stands for.
+
+    beta: grading exponent; 1 is an ordinary polar grid, larger packs the center.
+    s_min: the innermost fraction of the way out, to keep points off the center.
+    weighted: weigh each point by its area, so the loss stays an integral over
+        the domain and the grading only sharpens the quadrature. False weighs
+        all points equally, so the loss leans on the center where they gather.
+    """
+
+    n_r: int
+    n_theta: int
+    beta: float = 2.0
+    s_min: float = 0.0
+    weighted: bool = True
+
+    @property
+    def tag(self) -> str:
+        return f"graded-b{self.beta:g}" + ("" if self.weighted else "-unweighted")
+
+    def points(self, domain: Domain):
+        if domain.center is None:
+            raise ValueError("GradedCollocation needs a Domain with a center")
+        pts, area = graded_points(
+            domain.center,
+            *domain.theta_range,
+            domain.r_max_fn,
+            self.n_r,
+            self.n_theta,
+            self.beta,
+            self.s_min,
+        )
+        return pts, area if self.weighted else None
+
+
+@dataclass(frozen=True)
+class RADCollocation:
+    """n points, redrawn every `every` steps where the residual is large: the
+    residual-based adaptive distribution (RAD) of Wu et al., CMAME 403 (2023).
+
+    Each draw takes n of n_candidates fresh uniform random points, with
+    probability proportional to |r|^k / mean(|r|^k) + c. k sharpens the
+    preference for large residuals; c keeps a uniform share, so a large c is
+    plain random resampling. Training starts on n uniform random points, and
+    all points weigh the same, so the loss leans on where they gather.
+
+    seed: of the starting points and of every draw, shared by all models and
+        training seeds.
+    """
+
+    n: int
+    n_candidates: int = 30_000
+    k: float = 1.0
+    c: float = 1.0
+    every: int = 500
+    seed: int = 0
+
+    @property
+    def tag(self) -> str:
+        return f"rad-k{self.k:g}-c{self.c:g}"
+
+    def points(self, domain: Domain):
+        return RandomCollocation(self.n, self.seed).points(domain)
+
+    def resampler(self, domain: Domain, residual) -> Resampler:
+        """The draws for src.train.train, with `residual(model, pts)` the
+        same residual the loss uses."""
+        residual = nnx.jit(residual)
+
+        def draw(model, key):
+            cand_key, pick_key = jax.random.split(key)
+            candidates = random_points(
+                domain.lo, domain.hi, self.n_candidates, cand_key, domain.inside
+            )
+            return residual_density_points(
+                model, residual, candidates, self.n, pick_key, self.k, self.c
+            )
+
+        pts, _ = self.points(domain)
+        return Resampler(pts, draw, self.every, self.seed)
+
+
+CollocationConfig = (
+    GridCollocation | RandomCollocation | GradedCollocation | RADCollocation
+)
 
 
 # ---------- Models ----------

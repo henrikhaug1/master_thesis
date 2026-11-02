@@ -9,9 +9,10 @@ if str(REPO_ROOT) not in sys.path:
 
 import jax.numpy as jnp
 
-from src.config import KANNConfig, MLPConfig, Stage, TrainConfig
+from src.config import GridCollocation, KANNConfig, MLPConfig, Stage, TrainConfig
 from src.experiment import compare_models
 from src.loss import loss_fn
+from src.sampling import Domain
 from src.utils import derivatives
 
 OUT_DIR = Path(__file__).parent
@@ -20,7 +21,7 @@ TITLE = "1D Oscillator"
 # ---------- Settings ----------
 M, MU, K = 1.0, 0.4, 4.0  # mass, damping, stiffness
 T_MIN, T_MAX = 0.0, 10.0
-N_POINTS = 200  # collocation points
+COLLOCATION = GridCollocation(n=200)  # interior points; see src.config for others
 N_EVAL = 1000  # where the error is measured; only the endpoints are collocation points
 
 TRAIN = TrainConfig(
@@ -70,14 +71,14 @@ def ic_fn(model, t0=jnp.array([[T_MIN]]), u0=1.0, v0=0.0):
 
 
 def main():
-    pts = jnp.linspace(T_MIN, T_MAX, N_POINTS)[:, None]
+    pts, weights = COLLOCATION.points(Domain((T_MIN,), (T_MAX,)))
     t = jnp.linspace(T_MIN, T_MAX, N_EVAL)
     eval_pts = t[:, None]
 
     compare_models(
         MODELS,
         TRAIN,
-        loss=lambda model: loss_fn(model, pts, residual, ic_fn),
+        loss=lambda model: loss_fn(model, pts, residual, ic_fn, weights=weights),
         predict_fn=lambda model: model(eval_pts)[:, 0],
         u_exact=exact_solution(t),
         out_dir=OUT_DIR,
@@ -87,9 +88,9 @@ def main():
             mu=MU,
             k=K,
             domain=(T_MIN, T_MAX),
-            n_points=N_POINTS,
             n_eval=N_EVAL,
         ),
+        collocation=COLLOCATION,
         x=t,
         x_label="t",
         y_label="u(t)",

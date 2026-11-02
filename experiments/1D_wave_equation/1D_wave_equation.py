@@ -10,11 +10,12 @@ if str(REPO_ROOT) not in sys.path:
 
 import jax.numpy as jnp
 
-from src.config import KANNConfig, MLPConfig, Stage, TrainConfig
+from src.config import GridCollocation, KANNConfig, MLPConfig, Stage, TrainConfig
 from src.experiment import compare_models, median_prediction
-from src.loss import loss_fn
+from src.loss import dirichlet_loss, loss_fn
 from src.pinns import HardConstraint
 from src.plotting import plot_fields, plot_solution_grid
+from src.sampling import Domain, segment_points
 from src.utils import derivatives
 
 OUT_DIR = Path(__file__).parent
@@ -25,8 +26,8 @@ C = 1.0  # wave speed
 L = 2 * jnp.pi
 K = jnp.pi / L  # wave number of the initial condition
 T = 2 * L / C  # one full period of cos(c k t)
-N_GRID = 60  # collocation grid is N_GRID x N_GRID
-N_EVAL = 128  # error grid is N_EVAL x N_EVAL; it shares only the corners with N_GRID
+COLLOCATION = GridCollocation(n=60)  # interior points; see src.config for others
+N_EVAL = 128  # error grid is N_EVAL x N_EVAL; it shares only the corners with the grid
 N_IC = 100  # points on t = 0
 N_BC = 100  # points on each of x = 0 and x = L, used only when HARD_BC is False
 HARD_BC = True  # impose u = 0 at x = 0, L exactly instead of as a loss term
@@ -70,11 +71,6 @@ def residual(model, pts):
     return H[:, 1, 1] - (C**2 * H[:, 0, 0])
 
 
-def bc_fn(model, bc_pts):
-    u = model(bc_pts)[:, 0]
-    return jnp.mean(u**2)
-
-
 def ic_fn(model, ic_pts):
     u, g = derivatives(model, ic_pts, order=1)
     return jnp.mean((u - jnp.sin(K * ic_pts[:, 0])) ** 2) + jnp.mean(g[:, 1] ** 2)
@@ -86,39 +82,38 @@ def hard_bc(net):
 
 
 def main():
-    X_c, T_c = jnp.meshgrid(
-        jnp.linspace(0, L, N_GRID), jnp.linspace(0, T, N_GRID), indexing="ij"
-    )
-    pts = jnp.stack([X_c.ravel(), T_c.ravel()], axis=-1)
+    pts, weights = COLLOCATION.points(Domain((0.0, 0.0), (L, T)))
 
     xg = jnp.linspace(0, L, N_EVAL)
     tg = jnp.linspace(0, T, N_EVAL)
     X, T_grid = jnp.meshgrid(xg, tg, indexing="ij")
     eval_pts = jnp.stack([X.ravel(), T_grid.ravel()], axis=-1)
 
-    x_ic = jnp.linspace(0, L, N_IC)  # bottom edge t = 0
-    ic_pts = jnp.stack([x_ic, jnp.zeros_like(x_ic)], axis=-1)
-
-    t_bc = jnp.linspace(0, T, N_BC)  # side edges x = 0, L
-    bc_pts = jnp.concatenate(
+    ic_pts = segment_points((0.0, 0.0), (L, 0.0), N_IC)  # bottom edge t = 0
+    bc_pts = jnp.concatenate(  # side edges x = 0, L
         [
-            jnp.stack([jnp.zeros_like(t_bc), t_bc], axis=-1),
-            jnp.stack([jnp.full_like(t_bc, L), t_bc], axis=-1),
+            segment_points((0.0, 0.0), (0.0, T), N_BC),
+            segment_points((L, 0.0), (L, T), N_BC),
         ]
     )
 
     def loss(model):
         if HARD_BC:
             return loss_fn(
-                model, pts, residual=residual, ic_fn=lambda m: ic_fn(m, ic_pts)
+                model,
+                pts,
+                residual=residual,
+                ic_fn=lambda m: ic_fn(m, ic_pts),
+                weights=weights,
             )
         return loss_fn(
             model,
             pts,
             residual=residual,
             ic_fn=lambda m: ic_fn(m, ic_pts),
-            bc_fn=lambda m: bc_fn(m, bc_pts),
+            bc_fn=lambda m: dirichlet_loss(m, bc_pts),
             w_bc=W_BC,
+            weights=weights,
         )
 
     U_exact = exact_solution(X, T_grid)
@@ -134,13 +129,13 @@ def main():
             c=C,
             L=L,
             T=T,
-            n_grid=N_GRID,
             n_eval=N_EVAL,
             n_ic=N_IC,
             n_bc=N_BC,
             hard_bc=HARD_BC,
             w_bc=W_BC,
         ),
+        collocation=COLLOCATION,
         wrap=hard_bc if HARD_BC else None,
     )
 

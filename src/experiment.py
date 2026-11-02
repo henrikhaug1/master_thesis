@@ -12,9 +12,10 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
-from src.config import ModelConfig, TrainConfig
+from src.config import CollocationConfig, ModelConfig, TrainConfig
 from src.metrics import max_error, n_params, rel_l2_error
 from src.plotting import plot_loss_bands, plot_solution_grid
+from src.sampling import Resampler
 from src.train import train
 
 Run = dict[str, Any]
@@ -33,6 +34,8 @@ def compare_models(
     title: str,
     *,
     problem: Mapping[str, Any] | None = None,
+    collocation: CollocationConfig | None = None,
+    resampler: Resampler | None = None,
     wrap: Callable[[nnx.Module], nnx.Module] | None = None,
     overrides: Mapping[str, TrainConfig] | None = None,
     run_name: str | None = None,
@@ -40,7 +43,16 @@ def compare_models(
     x_label: str = "x",
     y_label: str = "u(x)",
 ) -> tuple[Results, Path]:
-    run_dir = Path(out_dir) / "runs" / (run_name or train_cfg.name)
+    """Train every model in `models` on the same loss and save the results.
+
+    `collocation` is only recorded, with the settings and in the default run
+    name; the points themselves are already inside `loss`. With a `resampler`
+    (see src.train.train), `loss` takes the points as its second argument.
+    """
+    if run_name is None:
+        tag = collocation.tag if collocation is not None else ""
+        run_name = "-".join(filter(None, (train_cfg.name, tag)))
+    run_dir = Path(out_dir) / "runs" / run_name
     figs = run_dir / "figs"
     # A rerun replaces the run as a whole: left in place, the files of a model
     # since removed from `models` would be loaded and plotted with the new ones.
@@ -55,10 +67,13 @@ def compare_models(
             "model": {"type": type(model_cfg).__name__, **asdict(model_cfg)},
             "train": asdict(cfg),
             "problem": dict(problem or {}),
+            "collocation": None
+            if collocation is None
+            else {"type": type(collocation).__name__, **asdict(collocation)},
             "wrap": None if wrap is None else wrap.__name__,
         }
         print(f"\n ----- MODEL: {name} -----")
-        runs = run_model(model_cfg, cfg, loss, predict_fn, u_exact, wrap)
+        runs = run_model(model_cfg, cfg, loss, predict_fn, u_exact, wrap, resampler)
         _save(run_dir / "results" / name, settings, runs, u_exact, x)
         results[name] = runs
 
@@ -93,7 +108,9 @@ def compare_models(
     return results, run_dir
 
 
-def run_model(model_cfg, train_cfg, loss, predict_fn, u_exact, wrap=None) -> list[Run]:
+def run_model(
+    model_cfg, train_cfg, loss, predict_fn, u_exact, wrap=None, resampler=None
+) -> list[Run]:
     """Build and train one model per seed of `train_cfg`."""
     runs = []
     for seed in train_cfg.seeds:
@@ -106,6 +123,7 @@ def run_model(model_cfg, train_cfg, loss, predict_fn, u_exact, wrap=None) -> lis
             loss,
             train_cfg,
             metric_fn=lambda m: rel_l2_error(predict_fn(m), u_exact),
+            resampler=resampler,
         )
         u = predict_fn(model)
         runs.append(

@@ -11,6 +11,7 @@ import optax
 from soap_jax import soap
 
 from src.config import Stage, TrainConfig
+from src.sampling import Resampler
 
 # Each entry is called with Stage.lr as `learning_rate` plus Stage.options.
 OPTIMIZERS = {
@@ -47,20 +48,29 @@ def make_optimizer(stage: Stage) -> optax.GradientTransformationExtraArgs:
     return optax.with_extra_args_support(OPTIMIZERS[stage.optimizer](**kwargs))
 
 
-def train(model, loss, cfg: TrainConfig, metric_fn=None) -> TrainResult:
+def train(
+    model, loss, cfg: TrainConfig, metric_fn=None, resampler: Resampler | None = None
+) -> TrainResult:
     """Train `model` in place on `loss`, running `cfg.stages` in order.
 
     `metric_fn(model)`, typically the error against the exact solution, is
     recorded at every check without affecting training.
+
+    With a `resampler`, the loss is called as loss(model, pts) on collocation
+    points that start at resampler.initial and are redrawn every
+    resampler.every steps of the first-order stages; L-BFGS keeps the last ones.
     """
     optimizers = [make_optimizer(s) for s in cfg.stages]  # catch typos up front
     log = {"loss": [], "metric": [], "metric_steps": []}
     best_losses, stage_ends, stop_reasons = [], [], []
 
+    pts = None if resampler is None else resampler.initial
+    key = None if resampler is None else jax.random.key(resampler.seed)
+
     start = time.perf_counter()
     for stage, tx in zip(cfg.stages, optimizers, strict=True):
-        best_loss, stop_reason = _train_stage(
-            model, loss, stage, tx, cfg, metric_fn, log
+        best_loss, stop_reason, pts, key = _train_stage(
+            model, loss, stage, tx, cfg, metric_fn, log, resampler, pts, key
         )
         best_losses.append(best_loss)
         stage_ends.append(len(log["loss"]))
@@ -77,35 +87,39 @@ def train(model, loss, cfg: TrainConfig, metric_fn=None) -> TrainResult:
     )
 
 
-def _train_stage(model, loss, stage, tx, cfg, metric_fn, log):
+def _train_stage(model, loss, stage, tx, cfg, metric_fn, log, resampler, pts, key):
     """Up to `stage.steps` steps of one optimizer, appending to `log`.
 
     The parameters are trained as a plain pytree and written back into `model`
-    only where it is read: before metric_fn and at the end of the stage.
+    only where it is read: before metric_fn, before a draw of new points and at
+    the end of the stage.
 
-    Returns (lowest loss of any step, stop reason).
+    Losses on different points do not compare, so a draw restarts the tracking
+    of the best loss and of convergence.
+
+    Returns (lowest loss of any step, stop reason, the points, the draws' key).
     """
     graphdef, params, rest = nnx.split(model, nnx.Param, ...)
     # Raw arrays instead of Param wrappers, which SOAP's tree_map trips over.
     params = nnx.as_pure(params)
 
-    def value_fn(p):
-        return loss(nnx.merge(graphdef, p, rest))
-
-    # L-BFGS's line search has already evaluated the loss and gradient at the
-    # point it accepted, which is where the next step starts; reusing them
-    # saves one evaluation per step. Other optimizers keep no such state.
-    if stage.optimizer == "lbfgs":
-        value_and_grad = optax.value_and_grad_from_state(value_fn)
-    else:
-        grad_fn = jax.value_and_grad(value_fn)
-
-        def value_and_grad(p, state):
-            return grad_fn(p)
-
+    # The points are an argument, not a constant, so new ones of the same
+    # shape reuse the compiled step.
     @jax.jit
-    def train_step(params, opt_state):
-        loss_val, grads = value_and_grad(params, state=opt_state)
+    def train_step(params, opt_state, pts):
+        def value_fn(p):
+            m = nnx.merge(graphdef, p, rest)
+            return loss(m) if pts is None else loss(m, pts)
+
+        # L-BFGS's line search has already evaluated the loss and gradient at
+        # the point it accepted, which is where the next step starts; reusing
+        # them saves one evaluation per step. Other optimizers keep no such state.
+        if stage.optimizer == "lbfgs":
+            loss_val, grads = optax.value_and_grad_from_state(value_fn)(
+                params, state=opt_state
+            )
+        else:
+            loss_val, grads = jax.value_and_grad(value_fn)(params)
         updates, opt_state = tx.update(
             grads, opt_state, params, value=loss_val, grad=grads, value_fn=value_fn
         )
@@ -115,8 +129,16 @@ def _train_stage(model, loss, stage, tx, cfg, metric_fn, log):
     offset = len(log["loss"])
     best_loss, best_params = float("inf"), None
     ref, stagnant, stop_reason = float("inf"), 0, "max_steps"
+    drawing = resampler is not None and stage.optimizer != "lbfgs"
 
     for i in range(stage.steps):
+        if drawing and i > 0 and i % resampler.every == 0:
+            nnx.update(model, params)
+            key, sub = jax.random.split(key)
+            pts = resampler.draw(model, sub)
+            best_loss, best_params = float("inf"), None
+            ref, stagnant = float("inf"), 0
+
         checking = i % cfg.check_every == 0
         if checking and metric_fn is not None:
             nnx.update(model, params)
@@ -126,7 +148,7 @@ def _train_stage(model, loss, stage, tx, cfg, metric_fn, log):
         # The loss a step returns belongs to the parameters it started from.
         # The arrays are immutable, so keeping a reference is enough.
         before = params
-        params, opt_state, loss_val = train_step(params, opt_state)
+        params, opt_state, loss_val = train_step(params, opt_state, pts)
         loss_now = float(loss_val)
         log["loss"].append(loss_now)
 
@@ -150,4 +172,4 @@ def _train_stage(model, loss, stage, tx, cfg, metric_fn, log):
             print(f"{stage.optimizer:<5} step {i:5d} | loss {loss_now:.6e}")
 
     nnx.update(model, params if best_params is None else best_params)
-    return best_loss, stop_reason
+    return best_loss, stop_reason, pts, key
